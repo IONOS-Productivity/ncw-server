@@ -34,6 +34,7 @@ class IonosTheme extends DefaultTheme implements ITheme {
 	public function getCustomCss(): string {
 	return "
 			#header {
+				box-shadow: var(--ion-shadow-header);
 				#nextcloud {
 				padding-inline-start: 220px;
 					.logo {
@@ -268,6 +269,7 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		};
 
 		$variables = [
+			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
 			'--color-main-background' => $ionColorMainBackground,
 			'--color-main-background-rgb' => $colorMainBackgroundRGB,
 			'--color-main-background-translucent' => 'rgba(var(--color-main-background-rgb), .97)',
