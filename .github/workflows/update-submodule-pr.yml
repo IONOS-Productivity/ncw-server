@@ -1,0 +1,397 @@
+name: Update Submodule PR
+
+on:
+  repository_dispatch:
+    types: [submodule-update]
+  workflow_call:
+    inputs:
+      submodule_name:
+        description: 'Name of the submodule to update'
+        required: true
+        type: string
+      submodule_repo:
+        description: 'Repository name of the submodule'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Commit SHA to update to'
+        required: true
+        type: string
+      commit_message:
+        description: 'Commit message from the submodule'
+        required: false
+        type: string
+      trigger_repo:
+        description: 'Repository that triggered the update'
+        required: true
+        type: string
+      trigger_ref:
+        description: 'Reference that triggered the update'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      submodule_name:
+        description: 'Name of the submodule to update'
+        required: true
+        type: string
+      submodule_repo:
+        description: 'Repository name of the submodule'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Commit SHA to update to'
+        required: true
+        type: string
+      commit_message:
+        description: 'Commit message from the submodule'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-submodule:
+    runs-on: [self-hosted]
+
+    steps:
+      - name: Extract event data
+        id: extract-data
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "submodule_name=${{ github.event.client_payload.submodule_name }}" >> $GITHUB_OUTPUT
+            echo "submodule_repo=${{ github.event.client_payload.submodule_repo }}" >> $GITHUB_OUTPUT
+            echo "commit_sha=${{ github.event.client_payload.commit_sha }}" >> $GITHUB_OUTPUT
+            echo "commit_message=${{ github.event.client_payload.commit_message }}" >> $GITHUB_OUTPUT
+            echo "trigger_repo=${{ github.event.client_payload.trigger_repo }}" >> $GITHUB_OUTPUT
+            echo "trigger_ref=${{ github.event.client_payload.trigger_ref }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_call" ]; then
+            echo "submodule_name=${{ inputs.submodule_name }}" >> $GITHUB_OUTPUT
+            echo "submodule_repo=${{ inputs.submodule_repo }}" >> $GITHUB_OUTPUT
+            echo "commit_sha=${{ inputs.commit_sha }}" >> $GITHUB_OUTPUT
+            echo "commit_message=${{ inputs.commit_message }}" >> $GITHUB_OUTPUT
+            echo "trigger_repo=${{ inputs.trigger_repo }}" >> $GITHUB_OUTPUT
+            echo "trigger_ref=${{ inputs.trigger_ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "submodule_name=${{ inputs.submodule_name }}" >> $GITHUB_OUTPUT
+            echo "submodule_repo=${{ inputs.submodule_repo }}" >> $GITHUB_OUTPUT
+            echo "commit_sha=${{ inputs.commit_sha }}" >> $GITHUB_OUTPUT
+            echo "commit_message=${{ inputs.commit_message }}" >> $GITHUB_OUTPUT
+            echo "trigger_repo=manual" >> $GITHUB_OUTPUT
+            echo "trigger_ref=manual" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: IONOS-Productivity/ncw-server
+          token: ${{ secrets.GITHUB_TOKEN }}
+          submodules: true
+          fetch-depth: 0
+
+      - name: Setup git config
+        run: |
+          git config user.name "ncw-server-bot"
+          git config user.email "noreply@ionos.com"
+
+      - name: Convert SSH URLs to HTTPS
+        run: |
+          echo "🔄 Converting SSH URLs to HTTPS for GitHub Actions compatibility..."
+
+          # Check if .gitmodules exists
+          if [ -f ".gitmodules" ]; then
+            # Convert any SSH URLs to HTTPS
+            sed -i 's|git@github.com:|https://github.com/|g' .gitmodules
+
+            echo "📋 Updated .gitmodules:"
+            cat .gitmodules
+
+            # Sync the submodule URLs
+            git submodule sync
+          else
+            echo "⚠️ No .gitmodules file found"
+          fi
+
+      - name: Verify submodule configuration
+        run: |
+          SUBMODULE="${{ steps.extract-data.outputs.submodule_name }}"
+
+          echo "🔍 Verifying submodule configuration..."
+
+          # Check if .gitmodules exists
+          if [ ! -f ".gitmodules" ]; then
+            echo "❌ No .gitmodules file found - submodules not configured"
+            exit 1
+          fi
+
+          echo "📋 Contents of .gitmodules:"
+          cat .gitmodules
+
+          # Check if the target submodule is configured
+          if ! grep -q "path = $SUBMODULE" .gitmodules; then
+            echo "❌ Submodule '$SUBMODULE' not found in .gitmodules"
+            echo "📋 Configured submodules:"
+            grep "path = " .gitmodules || echo "None found"
+            exit 1
+          fi
+
+          echo "✅ Submodule '$SUBMODULE' is properly configured"
+
+          # Show current repository state
+          echo "📂 Current directory structure:"
+          ls -la
+
+          # Check if submodule directory exists but is empty
+          if [ -d "$SUBMODULE" ]; then
+            echo "📁 Submodule directory exists, contents:"
+            ls -la "$SUBMODULE"
+            if [ -z "$(ls -A "$SUBMODULE")" ]; then
+              echo "⚠️ Submodule directory is empty - needs initialization"
+            fi
+          else
+            echo "❌ Submodule directory '$SUBMODULE' does not exist yet"
+          fi
+
+      - name: Initialize and update submodules
+        run: |
+          SUBMODULE="${{ steps.extract-data.outputs.submodule_name }}"
+
+          echo "🔄 Initializing submodules..."
+
+          # Try to initialize submodules
+          if git submodule init; then
+            echo "✅ Submodule initialization successful"
+          else
+            echo "❌ Submodule initialization failed"
+            exit 1
+          fi
+
+          # Show submodule status before update
+          echo "📋 Submodule status before update:"
+          git submodule status || echo "No submodules found"
+
+          # Update submodules with verbose output
+          echo "🔄 Updating submodules..."
+          if git submodule update --init --recursive --progress; then
+            echo "✅ Submodule update successful"
+          else
+            echo "❌ Submodule update failed - trying alternative approach..."
+
+            # Try manual clone if update fails
+            if [ ! -d "$SUBMODULE" ] || [ -z "$(ls -A "$SUBMODULE")" ]; then
+              echo "🔄 Attempting manual submodule setup..."
+              SUBMODULE_URL=$(git config --file .gitmodules submodule.$SUBMODULE.url)
+              echo "📡 Submodule URL: $SUBMODULE_URL"
+
+              # Convert SSH to HTTPS if needed for GitHub Actions
+              if [[ "$SUBMODULE_URL" == git@github.com:* ]]; then
+                HTTPS_URL=$(echo "$SUBMODULE_URL" | sed 's/git@github.com:/https:\/\/github.com\//')
+                echo "🔄 Converting SSH URL to HTTPS: $HTTPS_URL"
+                git config --file .gitmodules submodule.$SUBMODULE.url "$HTTPS_URL"
+                git submodule sync
+                git submodule update --init --recursive
+              fi
+            fi
+          fi
+
+          # Final status check
+          echo "📋 Final submodule status:"
+          git submodule status
+
+          # Verify target submodule directory
+          if [ ! -d "$SUBMODULE" ]; then
+            echo "❌ Submodule directory '$SUBMODULE' still does not exist"
+            echo "📂 Repository structure:"
+            ls -la
+            exit 1
+          fi
+
+          echo "📁 Submodule directory contents:"
+          ls -la "$SUBMODULE"
+
+          # Check if submodule has a git repository
+          if [ ! -d "$SUBMODULE/.git" ] && [ ! -f "$SUBMODULE/.git" ]; then
+            echo "⚠️ Submodule does not appear to be a git repository"
+          else
+            echo "✅ Submodule appears to be properly initialized"
+          fi
+
+      - name: Generate branch name
+        id: branch
+        run: |
+          SUBMODULE="${{ steps.extract-data.outputs.submodule_name }}"
+          SHORT_SHA="${{ steps.extract-data.outputs.commit_sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          BRANCH_NAME="update-${SUBMODULE}-${SHORT_SHA}-${TIMESTAMP}"
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Create feature branch
+        run: |
+          git checkout -b "${{ steps.branch.outputs.name }}"
+
+      - name: Update submodule pointer
+        id: update
+        run: |
+          SUBMODULE="${{ steps.extract-data.outputs.submodule_name }}"
+          TARGET_SHA="${{ steps.extract-data.outputs.commit_sha }}"
+
+          echo "🔄 Updating submodule '$SUBMODULE' to commit '$TARGET_SHA'"
+
+          # Verify submodule directory exists
+          if [ ! -d "$SUBMODULE" ]; then
+            echo "❌ Submodule directory '$SUBMODULE' does not exist"
+            echo "📂 Repository structure:"
+            ls -la
+            exit 1
+          fi
+
+          # Get current submodule commit
+          CURRENT_SHA=$(git rev-parse HEAD:$SUBMODULE 2>/dev/null || echo "none")
+          echo "current_sha=$CURRENT_SHA" >> $GITHUB_OUTPUT
+          echo "📍 Current SHA: $CURRENT_SHA"
+
+          # Verify we can enter the submodule directory
+          if ! cd "$SUBMODULE"; then
+            echo "❌ Cannot access submodule directory '$SUBMODULE'"
+            exit 1
+          fi
+
+          echo "📂 Working in submodule directory: $(pwd)"
+
+          # Fetch latest changes
+          echo "🔄 Fetching latest changes..."
+          git fetch origin || {
+            echo "❌ Failed to fetch from origin"
+            exit 1
+          }
+
+          # Verify target commit exists
+          if ! git cat-file -e "$TARGET_SHA" 2>/dev/null; then
+            echo "❌ Target commit '$TARGET_SHA' does not exist in submodule"
+            echo "📋 Available recent commits:"
+            git log --oneline -10 || echo "No commits found"
+            exit 1
+          fi
+
+          # Checkout target commit
+          echo "🎯 Checking out target commit: $TARGET_SHA"
+          git checkout "$TARGET_SHA" || {
+            echo "❌ Failed to checkout commit '$TARGET_SHA'"
+            exit 1
+          }
+
+          # Return to main repository
+          cd ..
+
+          # Stage the submodule change
+          git add "$SUBMODULE"
+
+          # Check if there are changes
+          if git diff --cached --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No changes detected - submodule already at target commit"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "✅ Submodule updated successfully"
+            echo "📊 Changes:"
+            git diff --cached --name-status
+          fi
+
+      - name: Commit changes
+        if: steps.update.outputs.has_changes == 'true'
+        run: |
+          SUBMODULE="${{ steps.extract-data.outputs.submodule_name }}"
+          TARGET_SHA="${{ steps.extract-data.outputs.commit_sha }}"
+          CURRENT_SHA="${{ steps.update.outputs.current_sha }}"
+          COMMIT_MSG="${{ steps.extract-data.outputs.commit_message }}"
+
+          # Create commit message
+          COMMIT_TITLE="Update $SUBMODULE submodule to ${TARGET_SHA:0:7}"
+
+          COMMIT_BODY="- Updated $SUBMODULE submodule pointer
+          - From: $CURRENT_SHA
+          - To: $TARGET_SHA"
+
+          if [ -n "$COMMIT_MSG" ] && [ "$COMMIT_MSG" != "null" ]; then
+            COMMIT_BODY="$COMMIT_BODY
+          - Latest commit: $COMMIT_MSG"
+          fi
+
+          COMMIT_BODY="$COMMIT_BODY
+
+          Triggered by: ${{ steps.extract-data.outputs.trigger_repo }}@${{ steps.extract-data.outputs.trigger_ref }}"
+
+          git commit -m "$COMMIT_TITLE" -m "$COMMIT_BODY"
+
+      - name: Push changes
+        if: steps.update.outputs.has_changes == 'true'
+        run: |
+          git push origin "${{ steps.branch.outputs.name }}"
+
+      - name: Create Pull Request
+        if: steps.update.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ steps.branch.outputs.name }}
+          base: main
+          title: "Update ${{ steps.extract-data.outputs.submodule_name }} submodule to ${{ steps.branch.outputs.short_sha }}"
+          body: |
+            ## 🔄 Submodule Update: ${{ steps.extract-data.outputs.submodule_name }}
+
+            This PR automatically updates the **${{ steps.extract-data.outputs.submodule_name }}** submodule pointer to the latest commit.
+
+            ### 📋 Details
+            - **Submodule**: `${{ steps.extract-data.outputs.submodule_name }}`
+            - **Repository**: `${{ steps.extract-data.outputs.submodule_repo }}`
+            - **From commit**: `${{ steps.update.outputs.current_sha }}`
+            - **To commit**: `${{ steps.extract-data.outputs.commit_sha }}`
+
+            ### 🚀 Trigger Information
+            - **Triggered by**: `${{ steps.extract-data.outputs.trigger_repo }}`
+            - **Reference**: `${{ steps.extract-data.outputs.trigger_ref }}`
+            - **Event**: `${{ github.event_name }}`
+
+            ### 💬 Latest Commit Message
+            ```
+            ${{ steps.extract-data.outputs.commit_message }}
+            ```
+
+            ---
+
+            🤖 *This PR was automatically created by the submodule update workflow.*
+
+            ### ✅ Pre-merge Checklist
+            - [ ] Verify the submodule changes are expected
+            - [ ] Check that tests pass
+            - [ ] Confirm no breaking changes in the updated submodule
+          labels: |
+            submodule-update
+            automated
+            ${{ steps.extract-data.outputs.submodule_name }}
+          reviewers: |
+            # Add your default reviewers here
+          draft: false
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.update.outputs.has_changes }}" = "true" ]; then
+            echo "::notice::✅ Successfully created PR to update ${{ steps.extract-data.outputs.submodule_name }} submodule"
+            echo "::notice::📝 PR branch: ${{ steps.branch.outputs.name }}"
+            echo "::notice::🔗 Commit: ${{ steps.extract-data.outputs.commit_sha }}"
+          else
+            echo "::notice::ℹ️ No update needed - ${{ steps.extract-data.outputs.submodule_name }} submodule is already up to date"
+          fi
+
+      - name: Cleanup on failure
+        if: failure()
+        run: |
+          # Clean up branch if it was created but process failed
+          git checkout main 2>/dev/null || true
+          git branch -D "${{ steps.branch.outputs.name }}" 2>/dev/null || true
+          git push origin --delete "${{ steps.branch.outputs.name }}" 2>/dev/null || true
+          echo "::warning::Cleaned up failed branch: ${{ steps.branch.outputs.name }}"
