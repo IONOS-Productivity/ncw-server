@@ -235,7 +235,7 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		];
 
 
-		$colorPrimary = $ionColorPrimary;
+		$colorPrimary = $ionColorBlueB4;
 		$this->primaryColor = $colorPrimary;
 		$colorShadowHeader = 'light-dark(' . 'rgba(113, 128, 149, 0.5)' . ', ' . 'rgba(113, 128, 149, 0.2)' . ')';
 
