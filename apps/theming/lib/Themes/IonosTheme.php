@@ -121,11 +121,8 @@ class IonosTheme extends DefaultTheme implements ITheme {
 
 				/* Sub Navigation Toggle Icon Button */
 				.button-vue--icon-only:not(.app-navigation-toggle) {
-					margin: 6px;
 					background-color: transparent;
 					span[role=img]>svg {
-						height: 16px;
-						width: 16px;
 						color: var(--ion-button-sidebar-text);
 					}
 					&:hover {
