@@ -235,12 +235,8 @@ class IonosTheme extends DefaultTheme implements ITheme {
 
 		$colorPrimary = $ionColorBlueB4;
 		$this->primaryColor = $colorPrimary;
-		$colorShadowHeader = 'light-dark(' . 'rgba(113, 128, 149, 0.5)' . ', ' . 'rgba(113, 128, 149, 0.2)' . ')';
 
 		$colorMainText = $ionColorTypoMild;
-		$colorMainTextRgb = join(',', $this->util->hexToRGB($colorMainText));
-		// Color that still provides enough contrast for text, so we need a ratio of 4.5:1 on main background AND hover
-		$colorTextMaxcontrast = '#6b6b6b'; // 4.5 : 1 for hover background and background dark
 		$colorMainBackground = '#ffffff';
 		$colorMainBackgroundRGB = join(',', $this->util->hexToRGB($colorMainBackground));
 		$colorBoxShadow = $this->util->darken($colorMainBackground, 70);
@@ -250,23 +246,6 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		$colorWarning = $ionColorAmberY3;
 		$colorSuccess = $ionColorGreenG3;
 		$colorInfo = $ionColorSkyS3;
-
-		$user = $this->userSession->getUser();
-		// Chromium based browsers currently (2024) have huge performance issues with blur filters
-		$isChromium = $this->request !== null && $this->request->isUserAgent([Request::USER_AGENT_CHROME, Request::USER_AGENT_MS_EDGE]);
-		// Ignore MacOS because they always have hardware accelartion
-		$isChromium = $isChromium && !$this->request->isUserAgent(['/Macintosh/']);
-		// Allow to force the blur filter
-		$forceEnableBlur = $user === null ? false : $this->config->getUserValue(
-			$user->getUID(),
-			'theming',
-			'force_enable_blur_filter',
-		);
-		$workingBlur = match($forceEnableBlur) {
-			'yes' => true,
-			'no' => false,
-			default => !$isChromium
-		};
 
 		$variables = [
 			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
