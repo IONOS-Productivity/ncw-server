@@ -32,8 +32,8 @@ class ThemesService {
 		private DarkTheme $darkTheme,
 		HighContrastTheme $highContrastTheme,
 		DarkHighContrastTheme $darkHighContrastTheme,
-		IonosTheme $ionosTheme,
 		DyslexiaFont $dyslexiaFont,
+		IonosTheme $ionosTheme,
 	) {
 
 		// Register themes
