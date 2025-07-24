@@ -16,15 +16,15 @@ class IonosTheme extends DefaultTheme implements ITheme {
 	}
 
 	public function getTitle(): string {
-		return $this->l->t('Ionos theme');
+		return $this->l->t('IONOS theme');
 	}
 
 	public function getEnableLabel(): string {
-		return $this->l->t('Enable the default ionos theme');
+		return $this->l->t('Enable the default IONOS theme');
 	}
 
 	public function getDescription(): string {
-		return $this->l->t('The default ionos appearance.');
+		return $this->l->t('The default IONOS appearance.');
 	}
 
 	public function getMediaQuery(): string {
