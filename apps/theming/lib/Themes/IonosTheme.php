@@ -32,7 +32,7 @@ class IonosTheme extends DefaultTheme implements ITheme {
 	}
 
 	public function getCustomCss(): string {
-		$customCss = file_get_contents(__DIR__ . '/../../css/ionos.css');
+		$customCss = file_get_contents(__DIR__ . '/../../css/ionos/_layout.css');
 
 		$regularEot = $this->urlGenerator->linkTo('theming', 'fonts/OpenSans/OpenSans-Regular-webfont.eot');
 		$regularWoff = $this->urlGenerator->linkTo('theming', 'fonts/OpenSans/OpenSans-Regular-webfont.woff');
