@@ -67,6 +67,16 @@ class ThemingController extends Controller {
 	 */
 	#[AuthorizedAdminSetting(settings: Admin::class)]
 	public function updateStylesheet($setting, $value) {
+		// Check if admin theming is disabled (except for the disable_admin_theming setting itself)
+		if ($setting === 'primary_color' || $setting === 'background_color') {
+			return new DataResponse([
+				'data' => [
+					'message' => $this->l10n->t('Admin theming is disabled'),
+				],
+				'status' => 'error'
+			], Http::STATUS_FORBIDDEN);
+		}
+
 		$value = trim($value);
 		$error = null;
 		$saved = false;
@@ -159,6 +169,16 @@ class ThemingController extends Controller {
 	 */
 	#[AuthorizedAdminSetting(settings: Admin::class)]
 	public function updateAppMenu($setting, $value) {
+		// Check if admin theming is disabled
+		if ($this->themingDefaults->isAdminThemingDisabled()) {
+			return new DataResponse([
+				'data' => [
+					'message' => $this->l10n->t('Admin theming is disabled'),
+				],
+				'status' => 'error'
+			], Http::STATUS_FORBIDDEN);
+		}
+
 		$error = null;
 		switch ($setting) {
 			case 'defaultApps':

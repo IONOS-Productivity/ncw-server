@@ -835,4 +835,22 @@ class ThemingDefaultsTest extends TestCase {
 		}
 		$this->assertEquals($result, $this->template->replaceImagePath($app, $image));
 	}
+
+	public function testIsAdminThemingDisabledWithDefault(): void {
+		$this->appConfig
+			->expects($this->once())
+			->method('getValueBool')
+			->with('theming', 'disable_admin_theming')
+			->willReturn(false);
+		$this->assertEquals(false, $this->template->isAdminThemingDisabled());
+	}
+
+	public function testIsAdminThemingDisabledWithCustom(): void {
+		$this->appConfig
+			->expects($this->once())
+			->method('getValueBool')
+			->with('theming', 'disable_admin_theming')
+			->willReturn(true);
+		$this->assertEquals(true, $this->template->isAdminThemingDisabled());
+	}
 }
