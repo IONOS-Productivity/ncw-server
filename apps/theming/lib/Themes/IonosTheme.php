@@ -32,7 +32,11 @@ class IonosTheme extends DefaultTheme implements ITheme {
 	}
 
 	public function getCustomCss(): string {
-		$customCss = file_get_contents(__DIR__ . '/../../css/ionos/_layout.css');
+		$customVariablesCss = file_get_contents(__DIR__ . '/../../css/ionos/variables.css');
+		$customSidebarCss = file_get_contents(__DIR__ . '/../../css/ionos/sidebar.css');
+		$customFilesCss = file_get_contents(__DIR__ . '/../../css/ionos/files.css');
+		$customLayoutCss = file_get_contents(__DIR__ . '/../../css/ionos/_layout.css');
+		$customCss = $customVariablesCss . PHP_EOL .  $customSidebarCss . PHP_EOL . $customFilesCss . PHP_EOL . $customLayoutCss;
 
 		$regularEot = $this->urlGenerator->linkTo('theming', 'fonts/OpenSans/OpenSans-Regular-webfont.eot');
 		$regularWoff = $this->urlGenerator->linkTo('theming', 'fonts/OpenSans/OpenSans-Regular-webfont.woff');
@@ -220,6 +224,7 @@ class IonosTheme extends DefaultTheme implements ITheme {
 
 			'--color-scrollbar' => $ionColorTypoMild,
 
+		 	'--default-clickable-area' => '44px',
 			// error/warning/success/info feedback colours
 			'--color-error' => $colorError,
 			'--color-error-rgb' => join(',', $this->util->hexToRGB($colorError)),
@@ -265,7 +270,7 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		// https://html.spec.whatwg.org/multipage/semantics.html#meta-color-scheme
 		return [[
 			'name' => 'color-scheme',
-			'content' => 'light',
+			'content' => 'light', // Remove only when dark mode is supported
 		]];
 	}
 }
