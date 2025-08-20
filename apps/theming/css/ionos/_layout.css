@@ -4,6 +4,7 @@
 	padding-inline-start: 220px;
 		.logo {
 			width: 200px;
+			filter: none;
 		}
 	}
 
