@@ -1,7 +1,7 @@
 #header {
 	box-shadow: var(--ion-shadow-header);
 	#nextcloud {
-	padding-inline-start: 220px;
+		padding-inline-start: 220px;
 		.logo {
 			width: 200px;
 			filter: none;
