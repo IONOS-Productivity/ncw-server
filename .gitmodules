@@ -16,3 +16,6 @@
 [submodule "apps-external/contacts"]
 	path = apps-external/contacts
 	url = git@github.com:nextcloud/contacts.git
+[submodule "apps-external/notify_push"]
+	path = apps-external/notify_push
+	url = git@github.com:nextcloud/notify_push.git
