@@ -71,6 +71,14 @@ jobs:
               "has_npm": true,
               "has_composer": true,
               "makefile_target": "build_contacts_app"
+            },
+            {
+              "name": "notify_push",
+              "path": "apps-external/notify_push",
+              "has_npm": false,
+              "has_composer": true,
+              "has_cargo": true,
+              "makefile_target": "build_notify_push_app"
             }
           ]'
 
@@ -109,6 +117,16 @@ jobs:
           node-version-file: "package.json"
           cache: 'npm'
           cache-dependency-path: ${{ matrix.app.path }}/package-lock.json
+
+      - name: Set up Rust toolchain
+        if: matrix.app.has_cargo
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install musl-tools and x86_64-unknown-linux-musl target
+        if: matrix.app.has_cargo
+        run: |
+          sudo apt-get update && sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
 
       - name: Setup PHP with PECL extension
         if: matrix.app.has_composer
