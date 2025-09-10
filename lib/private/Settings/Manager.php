@@ -302,7 +302,7 @@ class Manager implements IManager {
 	 * @inheritdoc
 	 */
 	public function getAllowedAdminSettings(string $section, IUser $user): array {
-		$isAdmin = $this->groupManager->isAdmin($user->getUID());
+		$isAdmin = false;
 		if ($isAdmin) {
 			$appSettings = $this->getSettings('admin', $section);
 		} else {
