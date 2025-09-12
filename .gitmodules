@@ -31,3 +31,6 @@
 [submodule "apps-external/tasks"]
 	path = apps-external/tasks
 	url = git@github.com:nextcloud/tasks.git
+[submodule "apps-external/mail"]
+	path = apps-external/mail
+	url = git@github.com:IONOS-Productivity/ncw-mail.git
