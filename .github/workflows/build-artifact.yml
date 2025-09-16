@@ -30,6 +30,16 @@ on:
     branches:
       - ionos-dev
       - ionos-stable
+  workflow_dispatch:
+    inputs:
+      ignore-cache:
+        description: 'Ignore cached build artifacts and force rebuild of external apps'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   TARGET_PACKAGE_NAME: nc-workspace.zip
@@ -250,8 +260,32 @@ jobs:
           submodules: true
           fetch-depth: '1'
 
+      - name: Display cache configuration
+        run: |
+          echo "Cache ignore setting: ${{ github.event.inputs.ignore-cache || 'false' }}"
+          if [ "${{ github.event.inputs.ignore-cache }}" == "true" ]; then
+            echo "⚠️  Cache will be ignored - forcing rebuild of ${{ matrix.app.name }}"
+          else
+            echo "✅ Cache will be used if available for ${{ matrix.app.name }}"
+          fi
+
+      - name: Get submodule SHA for ${{ matrix.app.name }}
+        id: get-submodule-sha
+        run: |
+          # Get the SHA of the specific submodule
+          SUBMODULE_SHA=$(git submodule status ${{ matrix.app.path }} | awk '{print $1}' | sed 's/^[+-]//')
+          echo "submodule-sha=$SUBMODULE_SHA" >> $GITHUB_OUTPUT
+          echo "Submodule SHA for ${{ matrix.app.name }}: $SUBMODULE_SHA"
+
+      - name: Check for cached build artifact
+        id: cache-check
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.app.path }}
+          key: external-app-build-${{ matrix.app.name }}-${{ steps.get-submodule-sha.outputs.submodule-sha }}${{ github.event.inputs.ignore-cache == 'true' && '-force-rebuild' || '' }}
+
       - name: Set up node with version from package.json's engines
-        if: matrix.app.has_npm
+        if: matrix.app.has_npm && steps.cache-check.outputs.cache-hit != 'true'
         uses: actions/setup-node@v5
         with:
           node-version-file: "package.json"
@@ -259,7 +293,7 @@ jobs:
           cache-dependency-path: ${{ matrix.app.path }}/package-lock.json
 
       - name: Setup PHP with PECL extension
-        if: matrix.app.has_composer
+        if: matrix.app.has_composer && steps.cache-check.outputs.cache-hit != 'true'
         uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
         with:
           tools: composer:v2
@@ -268,7 +302,7 @@ jobs:
           runner: ubuntu-latest
 
       - name: Cache Composer dependencies for ${{ matrix.app.name }}
-        if: matrix.app.has_composer
+        if: matrix.app.has_composer && steps.cache-check.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: ${{ matrix.app.path }}/vendor
@@ -277,7 +311,17 @@ jobs:
             ${{ runner.os }}-composer-${{ matrix.app.name }}-
 
       - name: Build ${{ matrix.app.name }} app
+        if: steps.cache-check.outputs.cache-hit != 'true'
         run: make -f IONOS/Makefile ${{ matrix.app.makefile_target }}
+
+      - name: Cache built app for future use
+        if: steps.cache-check.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ matrix.app.path }}
+            !${{ matrix.app.path }}/node_modules
+          key: external-app-build-${{ matrix.app.name }}-${{ steps.get-submodule-sha.outputs.submodule-sha }}
 
       - name: Upload ${{ matrix.app.name }} build artifacts
         uses: actions/upload-artifact@v4
