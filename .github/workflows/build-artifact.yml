@@ -51,8 +51,56 @@ permissions:
   contents: read
 
 jobs:
+  debug-inputs:
+    runs-on: ubuntu-latest
+    name: Debug workflow inputs
+    steps:
+      - name: Display workflow trigger information
+        run: |
+          echo "::group::Workflow Trigger Information"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch/Ref: ${{ github.ref_name }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run Number: ${{ github.run_number }}"
+          echo "::endgroup::"
+
+      - name: Display workflow_dispatch inputs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "::group::Manual Workflow Dispatch Inputs"
+          echo "::notice 🔧 Manual workflow trigger detected!"
+          echo ""
+          echo "::notice 📋 Input Parameters:"
+          echo "::notice   ignore-cache: '${{ github.event.inputs.ignore-cache || 'false' }}'"
+          echo ""
+          if [ "${{ github.event.inputs.ignore-cache }}" == "true" ]; then
+            echo "::notice ⚠️  CACHE WILL BE IGNORED - All external apps will be rebuilt from scratch"
+          else
+            echo "::notice ✅ Cache will be used if available to speed up build"
+          fi
+          echo "::endgroup::"
+
+      - name: Display automatic trigger information
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          echo "::group::Automatic Trigger Information"
+          echo "::notice 🤖 Workflow triggered automatically by: ${{ github.event_name }}"
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "  PR Number: #${{ github.event.pull_request.number }}"
+            echo "  PR Title: ${{ github.event.pull_request.title }}"
+            echo "  PR Author: ${{ github.event.pull_request.user.login }}"
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            echo "  Pushed to branch: ${{ github.ref_name }}"
+            echo "  Commit message: ${{ github.event.head_commit.message }}"
+          fi
+          echo "::endgroup::"
+
   prepare-matrix:
     runs-on: ubuntu-latest
+    needs: debug-inputs
     outputs:
       external-apps-matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
