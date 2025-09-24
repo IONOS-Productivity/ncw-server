@@ -49,3 +49,6 @@
 [submodule "apps-external/ncw_apps_menu"]
 	path = apps-external/ncw_apps_menu
 	url = git@github.com:IONOS-Productivity/ncw-apps-menu.git
+[submodule "apps-external/groupfolders"]
+	path = apps-external/groupfolders
+	url = git@github.com:nextcloud/groupfolders.git

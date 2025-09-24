@@ -148,6 +148,13 @@ jobs:
               "has_npm": true,
               "has_composer": true,
               "makefile_target": "build_ncw_apps_menu_app"
+            },
+            {
+              "name": "groupfolders",
+              "path": "apps-external/groupfolders",
+              "has_npm": true,
+              "has_composer": true,
+              "makefile_target": "build_groupfolders_app"
             }
           ]'
 
