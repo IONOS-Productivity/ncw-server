@@ -103,8 +103,8 @@ jobs:
     needs: debug-inputs
     outputs:
       external-apps-matrix: ${{ steps.check-caches.outputs.matrix }}
-      apps-to-build: ${{ steps.filter-apps.outputs.apps-to-build }}
       cache-results: ${{ steps.check-caches.outputs.cache-results }}
+      apps-to-build: ${{ steps.check-caches.outputs.apps-to-build }}
 
     steps:
       - name: Checkout server
@@ -290,7 +290,7 @@ jobs:
 
           # Validate JSON and output as compact format
           if echo "$apps" | jq empty 2>/dev/null; then
-            echo "apps=$(echo "$apps" | jq -c '.')" >> $GITHUB_OUTPUT
+            echo "matrix=$(echo "$apps" | jq -c '.')" >> $GITHUB_OUTPUT
             echo "Matrix configuration set successfully"
           else
             echo "Error: Invalid JSON in matrix configuration"
@@ -338,14 +338,22 @@ jobs:
             echo "Cache key for $app_name: $CACHE_KEY"
 
             # Store app info with cache key for later use
-            echo "{\"app\":$app,\"cache_key\":\"$CACHE_KEY\",\"submodule_sha\":\"$SUBMODULE_SHA\",\"npm_hash\":\"$NPM_HASH\",\"composer_hash\":\"$COMPOSER_HASH\"}" >> /tmp/app_cache_info.json
+
+            data_to_save="{\"app\":$app,\"cache_key\":\"$CACHE_KEY\",\"submodule_sha\":\"$SUBMODULE_SHA\",\"npm_hash\":\"$NPM_HASH\",\"composer_hash\":\"$COMPOSER_HASH\"}"
+
+            if [ -f /tmp/app_cache_info.json ]; then
+              app_cache_info=$(cat /tmp/app_cache_info.json)
+              echo $app_cache_info | jq -c ". += [$data_to_save]" > /tmp/app_cache_info.json
+            else
+              echo "[$data_to_save]" > /tmp/app_cache_info.json
+            fi
           done
 
           # Read all app cache info and determine which apps need building
           if [ -f /tmp/app_cache_info.json ]; then
             # For now, we'll assume all apps need building since we can't easily check cache existence
             # In a real scenario, you'd query the cache API or use a different approach
-            echo "apps-to-build=$(cat /tmp/app_cache_info.json | jq -s '.')" >> $GITHUB_OUTPUT
+            echo "apps-to-build=$(cat /tmp/app_cache_info.json)" >> $GITHUB_OUTPUT
             echo "cache-results={}" >> $GITHUB_OUTPUT
           else
             echo "apps-to-build=[]" >> $GITHUB_OUTPUT
