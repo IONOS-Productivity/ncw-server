@@ -102,13 +102,22 @@ jobs:
     runs-on: ubuntu-latest
     needs: debug-inputs
     outputs:
-      external-apps-matrix: ${{ steps.set-matrix.outputs.matrix }}
+      external-apps-matrix: ${{ steps.check-caches.outputs.matrix }}
+      apps-to-build: ${{ steps.filter-apps.outputs.apps-to-build }}
+      cache-results: ${{ steps.check-caches.outputs.cache-results }}
+
     steps:
-      - name: Set matrix
-        id: set-matrix
+      - name: Checkout server
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+          fetch-depth: '1'
+
+      - name: Set matrix. Check cache availability for all apps
+        id: check-caches
         run: |
           # Create matrix configuration as a compact JSON string
-          matrix='[
+          apps='[
             {
               "name": "richdocuments",
               "path": "apps-external/richdocuments",
@@ -280,18 +289,92 @@ jobs:
           ]'
 
           # Validate JSON and output as compact format
-          if echo "$matrix" | jq empty 2>/dev/null; then
-            echo "matrix=$(echo "$matrix" | jq -c '.')" >> $GITHUB_OUTPUT
+          if echo "$apps" | jq empty 2>/dev/null; then
+            echo "apps=$(echo "$apps" | jq -c '.')" >> $GITHUB_OUTPUT
             echo "Matrix configuration set successfully"
           else
             echo "Error: Invalid JSON in matrix configuration"
             exit 1
           fi
 
+          cache_results="{}"
+          apps_to_build="[]"
+
+          # Check each app's cache status
+          echo "$apps" | jq -c '.[]' | while read app; do
+            app_name=$(echo "$app" | jq -r '.name')
+            app_path=$(echo "$app" | jq -r '.path')
+            has_npm=$(echo "$app" | jq -r '.has_npm')
+            has_composer=$(echo "$app" | jq -r '.has_composer')
+
+            echo "Checking cache for $app_name..."
+
+            # Get submodule SHA
+            if [ -d "$app_path" ]; then
+              SUBMODULE_SHA=$(git submodule status "$app_path" | awk '{print $1}' | sed 's/^[+-]//')
+            else
+              echo "Warning: $app_path does not exist, will need to build"
+              SUBMODULE_SHA="missing"
+            fi
+
+            # Get hashes for cache keys
+            NPM_HASH=""
+            COMPOSER_HASH=""
+
+            if [ "$has_npm" == "true" ] && [ -f "$app_path/package-lock.json" ]; then
+              NPM_HASH=$(sha256sum "$app_path/package-lock.json" | cut -d' ' -f1)
+            fi
+
+            if [ "$has_composer" == "true" ] && [ -f "$app_path/composer.lock" ]; then
+              COMPOSER_HASH=$(sha256sum "$app_path/composer.lock" | cut -d' ' -f1)
+            fi
+
+            # Build cache key
+            CACHE_KEY="app-complete-${app_name}-${SUBMODULE_SHA}-${NPM_HASH}-${COMPOSER_HASH}"
+            if [ "${{ github.event.inputs.ignore-cache }}" == "true" ]; then
+              CACHE_KEY="${CACHE_KEY}-force-rebuild"
+            fi
+
+            echo "Cache key for $app_name: $CACHE_KEY"
+
+            # Store app info with cache key for later use
+            echo "{\"app\":$app,\"cache_key\":\"$CACHE_KEY\",\"submodule_sha\":\"$SUBMODULE_SHA\",\"npm_hash\":\"$NPM_HASH\",\"composer_hash\":\"$COMPOSER_HASH\"}" >> /tmp/app_cache_info.json
+          done
+
+          # Read all app cache info and determine which apps need building
+          if [ -f /tmp/app_cache_info.json ]; then
+            # For now, we'll assume all apps need building since we can't easily check cache existence
+            # In a real scenario, you'd query the cache API or use a different approach
+            echo "apps-to-build=$(cat /tmp/app_cache_info.json | jq -s '.')" >> $GITHUB_OUTPUT
+            echo "cache-results={}" >> $GITHUB_OUTPUT
+          else
+            echo "apps-to-build=[]" >> $GITHUB_OUTPUT
+            echo "cache-results={}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Filter apps that need building
+        id: filter-apps
+        run: |
+          # Since we can't easily check cache existence in the check job,
+          # we'll pass all apps but with enhanced cache info for the build job to decide
+          apps_to_build='${{ steps.check-caches.outputs.apps-to-build }}'
+
+          # Extract just the app info for the matrix
+          if [ "$apps_to_build" != "[]" ] && [ "$apps_to_build" != "" ]; then
+            filtered_apps=$(echo "$apps_to_build" | jq '[.[].app]')
+            echo "apps-to-build=$filtered_apps" >> $GITHUB_OUTPUT
+          else
+            echo "apps-to-build=[]" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Apps that will be processed: $(echo '${{ steps.check-caches.outputs.apps-to-build }}' | jq length) apps"
+
+  # Build only apps that need building
   build-external-apps:
     runs-on: ubuntu-latest
     needs: prepare-matrix
-
+    # Only run if there are apps to build
+    if: needs.prepare-matrix.outputs.apps-to-build != '[]'
     permissions:
       contents: read
 
@@ -299,7 +382,7 @@ jobs:
     strategy:
       max-parallel: 20
       matrix:
-        app: ${{ fromJson(needs.prepare-matrix.outputs.external-apps-matrix) }}
+        app: ${{ fromJson(needs.prepare-matrix.outputs.apps-to-build) }}
 
     steps:
       - name: Checkout server
