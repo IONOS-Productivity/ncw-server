@@ -49,3 +49,6 @@
 [submodule "apps-external/ncw_apps_menu"]
 	path = apps-external/ncw_apps_menu
 	url = git@github.com:IONOS-Productivity/ncw-apps-menu.git
+[submodule "apps-external/tables"]
+	path = apps-external/tables
+	url = git@github.com:nextcloud/tables.git
