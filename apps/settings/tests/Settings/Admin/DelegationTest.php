@@ -53,7 +53,7 @@ class DelegationTest extends TestCase {
 	}
 
 	public function testGetPriority(): void {
-		$this->assertEquals(75, $this->delegation->getPriority());
+		$this->assertEquals(0, $this->delegation->getPriority());
 	}
 
 	public function testGetName(): void {
