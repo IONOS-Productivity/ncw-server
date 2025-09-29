@@ -117,7 +117,7 @@ class Delegation implements IDelegatedSettings {
 	 * @inheritdoc
 	 */
 	public function getPriority() {
-		return 75;
+		return 0;
 	}
 
 	public function getName(): string {
