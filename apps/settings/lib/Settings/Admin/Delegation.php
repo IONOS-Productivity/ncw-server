@@ -26,6 +26,7 @@ class Delegation implements IDelegatedSettings {
 		private IURLGenerator $urlGenerator,
 		private IL10N $l10n,
 	) {
+		$this->settingManager = clone $settingManager;
 	}
 
 	/**
