@@ -55,3 +55,6 @@
 [submodule "apps-external/groupfolders"]
 	path = apps-external/groupfolders
 	url = git@github.com:nextcloud/groupfolders.git
+[submodule "apps-external/text"]
+	path = apps-external/text
+	url = git@github.com:nextcloud/text.git
