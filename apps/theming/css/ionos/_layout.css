@@ -1,19 +1,15 @@
 #header {
 	box-shadow: var(--ion-shadow-header);
-	background-color: var(--ion-color-main-background);
+	background-color: var(--ion-color-main-background) !important;
 
 	#nextcloud {
 		padding-inline-start: 220px;
-
-		.logo {
-			width: 200px;
-			filter: none;
-
-			@media (prefers-color-scheme: dark) {
-				filter: invert(100%) saturate(1%) brightness(99%) contrast(200%);
-			}
-		}
 	}
+
+	.logo {
+	width: 200px;
+	filter: none;
+}
 
 	.app-menu-entry--active::before {
 		background-color: light-dark(var(--ion-color-secondary), var(--ion-color-cool-grey-c1));
@@ -34,6 +30,12 @@
 	}
 }
 
+@media (prefers-color-scheme: dark) {
+	#header .logo {
+		filter: invert(100%) saturate(1%) brightness(99%) contrast(200%);
+	}
+}
+
 .header-end svg {
 	fill: var(--ion-text);
 }
@@ -48,5 +50,35 @@
 
 	.app-content .chatView .wrapper {
 		bottom: 50px;
+	}
+}
+
+#content.app-dashboard {
+	background-color: var(--ion-color-main-background);
+	margin-right: 0;
+	margin-left: 0;
+	width: 100%;
+	border-radius: 0;
+
+	h2 {
+		color: var(--ion-text) !important;
+	}
+
+	.panel {
+		background-color: var(--ion-surface-secondary);
+		.panel--header img {
+			filter: none;
+			@media (prefers-color-scheme: dark) {
+				filter: var(--background-invert-if-bright);
+			}
+		}
+	}
+}
+
+#body-login {
+	background-color: var(--ion-color-main-background);
+
+	.guest-box.login-box {
+		background-color: var(--ion-surface-secondary);
 	}
 }
