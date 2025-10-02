@@ -141,8 +141,7 @@ trait CommonSettingsTrait {
 		$user = $this->userSession->getUser();
 		assert($user !== null, 'No user logged in for settings');
 
-		$this->declarativeSettingsManager->loadSchemas();
-		$declarativeSettings = $this->declarativeSettingsManager->getFormsWithValues($user, $type, $section);
+		$declarativeSettings = [];
 
 		if ($type === 'personal') {
 			$settings = array_values($this->settingsManager->getPersonalSettings($section));
@@ -152,6 +151,14 @@ trait CommonSettingsTrait {
 				$this->navigationManager->setActiveEntry('settings');
 			}
 		} elseif ($type === 'admin') {
+
+			$isAdmin = $this->groupManager->isAdmin($user->getUID());
+
+			if ($isAdmin) {
+				$this->declarativeSettingsManager->loadSchemas();
+				$declarativeSettings = $this->declarativeSettingsManager->getFormsWithValues($user, $type, $section);
+			}
+
 			$settings = array_values($this->settingsManager->getAllowedAdminSettings($section, $user));
 			if (empty($settings) && empty($declarativeSettings)) {
 				throw new NotAdminException('Logged in user does not have permission to access these settings.');

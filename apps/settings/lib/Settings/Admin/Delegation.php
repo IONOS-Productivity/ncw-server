@@ -11,19 +11,22 @@ use OCA\Settings\Service\AuthorizedGroupService;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
 use OCP\IGroupManager;
+use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\Settings\IDelegatedSettings;
 use OCP\Settings\IManager;
 use OCP\Settings\ISettings;
 
-class Delegation implements ISettings {
+class Delegation implements IDelegatedSettings {
 	public function __construct(
 		private IManager $settingManager,
 		private IInitialState $initialStateService,
 		private IGroupManager $groupManager,
 		private AuthorizedGroupService $authorizedGroupService,
 		private IURLGenerator $urlGenerator,
+		private IL10N $l10n,
 	) {
+		$this->settingManager = clone $settingManager;
 	}
 
 	/**
@@ -115,6 +118,14 @@ class Delegation implements ISettings {
 	 * @inheritdoc
 	 */
 	public function getPriority() {
-		return 75;
+		return 0;
+	}
+
+	public function getName(): string {
+		return $this->l10n->t('Delegation');
+	}
+
+	public function getAuthorizedAppConfig(): array {
+		return [];
 	}
 }
