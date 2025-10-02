@@ -61,3 +61,6 @@
 [submodule "apps-external/deck"]
 	path = apps-external/deck
 	url = git@github.com:nextcloud/deck.git
+[submodule "apps-external/circles"]
+	path = apps-external/circles
+	url = git@github.com:nextcloud/circles.git
