@@ -61,3 +61,6 @@
 [submodule "apps-external/deck"]
 	path = apps-external/deck
 	url = git@github.com:nextcloud/deck.git
+[submodule "apps-external/whiteboard"]
+	path = apps-external/whiteboard
+	url = git@github.com:nextcloud/whiteboard.git
