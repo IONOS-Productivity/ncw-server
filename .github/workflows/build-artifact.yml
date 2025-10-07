@@ -30,6 +30,16 @@ on:
     branches:
       - ionos-dev
       - ionos-stable
+  workflow_dispatch:
+    inputs:
+      ignore-cache:
+        description: 'Ignore cached build artifacts and force rebuild of external apps'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   TARGET_PACKAGE_NAME: nc-workspace.zip
@@ -41,16 +51,73 @@ permissions:
   contents: read
 
 jobs:
+  debug-inputs:
+    runs-on: ubuntu-latest
+    name: Debug workflow inputs
+    steps:
+      - name: Display workflow trigger information
+        run: |
+          echo "::group::Workflow Trigger Information"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch/Ref: ${{ github.ref_name }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run Number: ${{ github.run_number }}"
+          echo "::endgroup::"
+
+      - name: Display workflow_dispatch inputs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "::group::Manual Workflow Dispatch Inputs"
+          echo "::notice 🔧 Manual workflow trigger detected!"
+          echo ""
+          echo "::notice 📋 Input Parameters:"
+          echo "::notice   ignore-cache: '${{ github.event.inputs.ignore-cache || 'false' }}'"
+          echo ""
+          if [ "${{ github.event.inputs.ignore-cache }}" == "true" ]; then
+            echo "::notice ⚠️  CACHE WILL BE IGNORED - All external apps will be rebuilt from scratch"
+          else
+            echo "::notice ✅ Cache will be used if available to speed up build"
+          fi
+          echo "::endgroup::"
+
+      - name: Display automatic trigger information
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          echo "::group::Automatic Trigger Information"
+          echo "::notice 🤖 Workflow triggered automatically by: ${{ github.event_name }}"
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "  PR Number: #${{ github.event.pull_request.number }}"
+            echo "  PR Title: ${{ github.event.pull_request.title }}"
+            echo "  PR Author: ${{ github.event.pull_request.user.login }}"
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            echo "  Pushed to branch: ${{ github.ref_name }}"
+            echo "  Commit message: ${{ github.event.head_commit.message }}"
+          fi
+          echo "::endgroup::"
+
   prepare-matrix:
     runs-on: ubuntu-latest
+    needs: debug-inputs
     outputs:
-      external-apps-matrix: ${{ steps.set-matrix.outputs.matrix }}
+      external-apps-matrix: ${{ steps.check-caches.outputs.matrix }}
+      cache-results: ${{ steps.check-caches.outputs.cache-results }}
+      apps-to-build: ${{ steps.check-caches.outputs.apps-to-build }}
+
     steps:
-      - name: Set matrix
-        id: set-matrix
+      - name: Checkout server
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+          fetch-depth: '1'
+
+      - name: Set matrix. Check cache availability for all apps
+        id: check-caches
         run: |
           # Create matrix configuration as a compact JSON string
-          matrix='[
+          apps='[
             {
               "name": "richdocuments",
               "path": "apps-external/richdocuments",
@@ -222,18 +289,100 @@ jobs:
           ]'
 
           # Validate JSON and output as compact format
-          if echo "$matrix" | jq empty 2>/dev/null; then
-            echo "matrix=$(echo "$matrix" | jq -c '.')" >> $GITHUB_OUTPUT
+          if echo "$apps" | jq empty 2>/dev/null; then
+            echo "matrix=$(echo "$apps" | jq -c '.')" >> $GITHUB_OUTPUT
             echo "Matrix configuration set successfully"
           else
             echo "Error: Invalid JSON in matrix configuration"
             exit 1
           fi
 
+          cache_results="{}"
+          apps_to_build="[]"
+
+          # Check each app's cache status
+          echo "$apps" | jq -c '.[]' | while read app; do
+            app_name=$(echo "$app" | jq -r '.name')
+            app_path=$(echo "$app" | jq -r '.path')
+            has_npm=$(echo "$app" | jq -r '.has_npm')
+            has_composer=$(echo "$app" | jq -r '.has_composer')
+
+            echo "Checking cache for $app_name..."
+
+            # Get submodule SHA
+            if [ -d "$app_path" ]; then
+              SUBMODULE_SHA=$(git submodule status "$app_path" | awk '{print $1}' | sed 's/^[+-]//')
+            else
+              echo "Warning: $app_path does not exist, will need to build"
+              SUBMODULE_SHA="missing"
+            fi
+
+            # Get hashes for cache keys
+            NPM_HASH=""
+            COMPOSER_HASH=""
+
+            if [ "$has_npm" == "true" ] && [ -f "$app_path/package-lock.json" ]; then
+              NPM_HASH=$(sha256sum "$app_path/package-lock.json" | cut -d' ' -f1)
+            fi
+
+            if [ "$has_composer" == "true" ] && [ -f "$app_path/composer.lock" ]; then
+              COMPOSER_HASH=$(sha256sum "$app_path/composer.lock" | cut -d' ' -f1)
+            fi
+
+            # Build cache key
+            CACHE_KEY="app-complete-${app_name}-${SUBMODULE_SHA}-${NPM_HASH}-${COMPOSER_HASH}"
+            if [ "${{ github.event.inputs.ignore-cache }}" == "true" ]; then
+              CACHE_KEY="${CACHE_KEY}-force-rebuild"
+            fi
+
+            echo "Cache key for $app_name: $CACHE_KEY"
+
+            # Store app info with cache key for later use
+
+            data_to_save="{\"app\":$app,\"cache_key\":\"$CACHE_KEY\",\"submodule_sha\":\"$SUBMODULE_SHA\",\"npm_hash\":\"$NPM_HASH\",\"composer_hash\":\"$COMPOSER_HASH\"}"
+
+            if [ -f /tmp/app_cache_info.json ]; then
+              app_cache_info=$(cat /tmp/app_cache_info.json)
+              echo $app_cache_info | jq -c ". += [$data_to_save]" > /tmp/app_cache_info.json
+            else
+              echo "[$data_to_save]" > /tmp/app_cache_info.json
+            fi
+          done
+
+          # Read all app cache info and determine which apps need building
+          if [ -f /tmp/app_cache_info.json ]; then
+            # For now, we'll assume all apps need building since we can't easily check cache existence
+            # In a real scenario, you'd query the cache API or use a different approach
+            echo "apps-to-build=$(cat /tmp/app_cache_info.json)" >> $GITHUB_OUTPUT
+            echo "cache-results={}" >> $GITHUB_OUTPUT
+          else
+            echo "apps-to-build=[]" >> $GITHUB_OUTPUT
+            echo "cache-results={}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Filter apps that need building
+        id: filter-apps
+        run: |
+          # Since we can't easily check cache existence in the check job,
+          # we'll pass all apps but with enhanced cache info for the build job to decide
+          apps_to_build='${{ steps.check-caches.outputs.apps-to-build }}'
+
+          # Extract just the app info for the matrix
+          if [ "$apps_to_build" != "[]" ] && [ "$apps_to_build" != "" ]; then
+            filtered_apps=$(echo "$apps_to_build" | jq '[.[].app]')
+            echo "apps-to-build=$filtered_apps" >> $GITHUB_OUTPUT
+          else
+            echo "apps-to-build=[]" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Apps that will be processed: $(echo '${{ steps.check-caches.outputs.apps-to-build }}' | jq length) apps"
+
+  # Build only apps that need building
   build-external-apps:
     runs-on: ubuntu-latest
     needs: prepare-matrix
-
+    # Only run if there are apps to build
+    if: needs.prepare-matrix.outputs.apps-to-build != '[]'
     permissions:
       contents: read
 
@@ -241,7 +390,7 @@ jobs:
     strategy:
       max-parallel: 20
       matrix:
-        app: ${{ fromJson(needs.prepare-matrix.outputs.external-apps-matrix) }}
+        app: ${{ fromJson(needs.prepare-matrix.outputs.apps-to-build) }}
 
     steps:
       - name: Checkout server
@@ -250,8 +399,32 @@ jobs:
           submodules: true
           fetch-depth: '1'
 
+      - name: Display cache configuration
+        run: |
+          echo "Cache ignore setting: ${{ github.event.inputs.ignore-cache || 'false' }}"
+          if [ "${{ github.event.inputs.ignore-cache }}" == "true" ]; then
+            echo "⚠️  Cache will be ignored - forcing rebuild of ${{ matrix.app.name }}"
+          else
+            echo "✅ Cache will be used if available for ${{ matrix.app.name }}"
+          fi
+
+      - name: Get submodule SHA for ${{ matrix.app.name }}
+        id: get-submodule-sha
+        run: |
+          # Get the SHA of the specific submodule
+          SUBMODULE_SHA=$(git submodule status ${{ matrix.app.path }} | awk '{print $1}' | sed 's/^[+-]//')
+          echo "submodule-sha=$SUBMODULE_SHA" >> $GITHUB_OUTPUT
+          echo "Submodule SHA for ${{ matrix.app.name }}: $SUBMODULE_SHA"
+
+      - name: Check for cached build artifact
+        id: cache-check
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.app.path }}
+          key: external-app-build-${{ matrix.app.name }}-${{ steps.get-submodule-sha.outputs.submodule-sha }}${{ github.event.inputs.ignore-cache == 'true' && '-force-rebuild' || '' }}
+
       - name: Set up node with version from package.json's engines
-        if: matrix.app.has_npm
+        if: matrix.app.has_npm && steps.cache-check.outputs.cache-hit != 'true'
         uses: actions/setup-node@v5
         with:
           node-version-file: "package.json"
@@ -259,7 +432,7 @@ jobs:
           cache-dependency-path: ${{ matrix.app.path }}/package-lock.json
 
       - name: Setup PHP with PECL extension
-        if: matrix.app.has_composer
+        if: matrix.app.has_composer && steps.cache-check.outputs.cache-hit != 'true'
         uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
         with:
           tools: composer:v2
@@ -268,7 +441,7 @@ jobs:
           runner: ubuntu-latest
 
       - name: Cache Composer dependencies for ${{ matrix.app.name }}
-        if: matrix.app.has_composer
+        if: matrix.app.has_composer && steps.cache-check.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: ${{ matrix.app.path }}/vendor
@@ -277,7 +450,17 @@ jobs:
             ${{ runner.os }}-composer-${{ matrix.app.name }}-
 
       - name: Build ${{ matrix.app.name }} app
+        if: steps.cache-check.outputs.cache-hit != 'true'
         run: make -f IONOS/Makefile ${{ matrix.app.makefile_target }}
+
+      - name: Cache built app for future use
+        if: steps.cache-check.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ matrix.app.path }}
+            !${{ matrix.app.path }}/node_modules
+          key: external-app-build-${{ matrix.app.name }}-${{ steps.get-submodule-sha.outputs.submodule-sha }}
 
       - name: Upload ${{ matrix.app.name }} build artifacts
         uses: actions/upload-artifact@v4
