@@ -155,6 +155,41 @@ jobs:
               "has_npm": true,
               "has_composer": true,
               "makefile_target": "build_tables_app"
+            },
+            {
+              "name": "ncw_mailtemplate",
+              "path": "apps-external/ncw_mailtemplate",
+              "has_npm": false,
+              "has_composer": true,
+              "makefile_target": "build_ncw_mailtemplate_app"
+            },
+            {
+              "name": "notes",
+              "path": "apps-external/notes",
+              "has_npm": true,
+              "has_composer": true,
+              "makefile_target": "build_notes_app"
+            },
+            {
+              "name": "groupfolders",
+              "path": "apps-external/groupfolders",
+              "has_npm": true,
+              "has_composer": true,
+              "makefile_target": "build_groupfolders_app"
+            },
+            {
+              "name": "deck",
+              "path": "apps-external/deck",
+              "has_npm": true,
+              "has_composer": true,
+              "makefile_target": "build_deck_app"
+            },
+            {
+              "name": "forms",
+              "path": "apps-external/forms",
+              "has_npm": true,
+              "has_composer": true,
+              "makefile_target": "build_forms_app"
             }
           ]'
 
@@ -176,6 +211,7 @@ jobs:
 
     name: build-external-apps
     strategy:
+      max-parallel: 20
       matrix:
         app: ${{ fromJson(needs.prepare-matrix.outputs.external-apps-matrix) }}
 
