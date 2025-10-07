@@ -68,7 +68,7 @@ jobs:
         if: steps.changed-files.outputs.all_changed_files != '[]'
         run: |
           # The full, unfiltered matrix configuration
-          FULL_MATRIX=[
+          FULL_MATRIX='[
             {
               "name": "richdocuments",
               "path": "apps-external/richdocuments",
@@ -239,11 +239,8 @@ jobs:
             }
           ]'
 
-          echo ${{ steps.changed-files.outputs.all_changed_files }} | jq
-          echo $FULL_MATRIX | jq
-
           # The list of changed paths from the previous step
-          CHANGED_PATHS='${{ steps.changed-files.outputs.all_changed_files }}'
+          CHANGED_PATHS="${{ steps.changed-files.outputs.all_changed_files }}"
 
           echo $CHANGED_PATHS | jq
 
