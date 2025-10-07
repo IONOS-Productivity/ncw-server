@@ -239,8 +239,12 @@ jobs:
             }
           ]'
 
+          echo $FULL_MATRIX | jq
+
           # The list of changed paths from the previous step
           CHANGED_PATHS='${{ steps.changed-files.outputs.all_changed_files }}'
+
+          echo $CHANGED_PATHS | jq
 
           # Use jq to filter the FULL_MATRIX. It keeps an entry only if its "path" is in the CHANGED_PATHS list.
           FILTERED_MATRIX=$(echo "$FULL_MATRIX" | jq --compact-output --argjson paths "$CHANGED_PATHS" '[.[] | select(.path as $p | $paths | index($p))]')
