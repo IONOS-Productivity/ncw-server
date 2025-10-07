@@ -41,16 +41,34 @@ permissions:
   contents: read
 
 jobs:
-  prepare-matrix:
+  filter-matrix:
     runs-on: ubuntu-latest
     outputs:
-      external-apps-matrix: ${{ steps.set-matrix.outputs.matrix }}
+      matrix: ${{ steps.create-matrix.outputs.matrix }}
     steps:
-      - name: Set matrix
-        id: set-matrix
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          # Required to inspect submodule pointers
+          submodules: true
+          # Fetch history to compare submodule commits
+          fetch-depth: '2'
+
+      - name: Detect changed submodules
+        id: changed-files
+        uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62 # v47
+        with:
+          # This outputs a JSON array of changed files to the `all_changed_files` output
+          json: 'true'
+
+      # STEP 2: Transform the list of paths into the full JSON matrix for the build job.
+      - name: Create final matrix from changed paths
+        id: create-matrix
+        # This step only runs if the previous step found changed files.
+        if: steps.changed-files.outputs.all_changed_files != '[]'
         run: |
-          # Create matrix configuration as a compact JSON string
-          matrix='[
+          # The full, unfiltered matrix configuration
+          FULL_MATRIX=[
             {
               "name": "richdocuments",
               "path": "apps-external/richdocuments",
@@ -221,18 +239,22 @@ jobs:
             }
           ]'
 
-          # Validate JSON and output as compact format
-          if echo "$matrix" | jq empty 2>/dev/null; then
-            echo "matrix=$(echo "$matrix" | jq -c '.')" >> $GITHUB_OUTPUT
-            echo "Matrix configuration set successfully"
-          else
-            echo "Error: Invalid JSON in matrix configuration"
-            exit 1
-          fi
+          # The list of changed paths from the previous step
+          CHANGED_PATHS='${{ steps.changed-files.outputs.all_changed_files }}'
+
+          # Use jq to filter the FULL_MATRIX. It keeps an entry only if its "path" is in the CHANGED_PATHS list.
+          FILTERED_MATRIX=$(echo "$FULL_MATRIX" | jq --compact-output --argjson paths "$CHANGED_PATHS" '[.[] | select(.path as $p | $paths | index($p))]')
+
+          echo "Detected changed paths: $CHANGED_PATHS"
+          echo "Filtered matrix: $FILTERED_MATRIX"
+          echo "matrix=$FILTERED_MATRIX" >> $GITHUB_OUTPUT
 
   build-external-apps:
     runs-on: ubuntu-latest
-    needs: prepare-matrix
+    needs: filter-matrix
+
+    # This conditional ensures the job group is skipped if no submodules changed.
+    if: needs.filter-matrix.outputs.matrix != '[]'
 
     permissions:
       contents: read
@@ -241,13 +263,14 @@ jobs:
     strategy:
       max-parallel: 20
       matrix:
-        app: ${{ fromJson(needs.prepare-matrix.outputs.external-apps-matrix) }}
+        app: ${{ fromJson(needs.filter-matrix.outputs.matrix) }}
 
     steps:
       - name: Checkout server
         uses: actions/checkout@v5
         with:
-          submodules: true
+          # 'recursive' is needed here to get the actual source code for building.
+          submodules: 'recursive'
           fetch-depth: '1'
 
       - name: Set up node with version from package.json's engines
@@ -290,7 +313,9 @@ jobs:
 
   build-artifact:
     runs-on: ubuntu-latest
-    needs: [prepare-matrix, build-external-apps]
+    # This job now correctly depends on the dynamic build-external-apps job.
+    # If the matrix is empty, 'build-external-apps' is skipped, and this job will also be skipped.
+    needs: build-external-apps
 
     permissions:
       contents: read
@@ -430,7 +455,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable'
 
     name: Push to artifactory
-    needs: [prepare-matrix, build-external-apps, build-artifact]
+    needs: build-artifact
 
     outputs:
       ARTIFACTORY_LAST_BUILD_PATH: ${{ steps.artifactory_upload.outputs.ARTIFACTORY_LAST_BUILD_PATH }}
@@ -530,7 +555,7 @@ jobs:
       packages: write
 
     name: Push artifact to ghcr.io
-    needs: [prepare-matrix, build-external-apps, build-artifact]
+    needs: build-artifact
 
     steps:
       - name: Download artifact zip
