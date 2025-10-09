@@ -50,6 +50,14 @@ class Add extends Base {
 			return 3;
 		}
 
+		$groups = $this->authorizedGroupService->findExistingGroupsForClass($settingClass);
+		foreach ($groups as $group) {
+			if ($group->getGroupId() === $groupId) {
+				$io->error('The specified group has already been delegated to.');
+				return 4;
+			}
+		}
+
 		$this->authorizedGroupService->create($groupId, $settingClass);
 
 		$io->success('Administration of ' . $settingClass . ' delegated to ' . $groupId . '.');
