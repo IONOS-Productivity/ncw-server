@@ -1,3 +1,4 @@
+#body-public #header,
 #body-settings #header,
 #body-user #header {
 	box-shadow: var(--ion-shadow-header);
@@ -10,14 +11,16 @@
 		@media (max-width: 768px) {
 			padding-inline-start: 100px;
 		}
+		.header-info {
+			display: none;
+		}
 	}
 
 	.logo {
-	width: 350px;
-	height: 84px;
-	top: inherit;
-	bottom: inherit;
-	filter: none;
+		width: 335px;
+		height: 80px;
+		top: inherit;
+		bottom: inherit;
 	}
 
 	.app-menu-entry--active::before {
@@ -60,6 +63,10 @@
 			}
 		}
 	}
+}
+
+#header .logo {
+	filter: none;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -114,8 +121,9 @@
 #body-login {
 	background-color: var(--ion-color-main-background);
 
-	#header {
-		box-shadow: none;
+	.logo {
+		width: 335px;
+		height: 80px;
 	}
 
 	.guest-box.login-box {
