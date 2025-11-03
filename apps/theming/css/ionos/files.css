@@ -302,7 +302,7 @@ div.v-popper--theme-dropdown.v-popper__popper:has(.v-popper__wrapper), .header-m
 		.unified-search-modal__header, .input-field__input, .input-field__label {
 			background-color: var(--ion-surface-dialog);
 
-			.unified-search-modal__filters{
+			.unified-search-modal__filters[data-cy-unified-search-filters]{
 				button.button-vue--vue-secondary.action-item__menutoggle[id*="trigger-menu"] {
 					background-color: var(--ion-dialog-filter-button-background);
 					&:hover {
