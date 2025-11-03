@@ -22,6 +22,7 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		'sidebar.css',
 		'apps.css',
 		'guest.css',
+		'profile.css',
 		'files.css',
 		'settings.css',
 		'_layout.css',
@@ -189,7 +190,9 @@ class IonosTheme extends DefaultTheme implements ITheme {
 
 		$colorMainText = '#ff8700';
 		$colorMainBackground = '#ffffff';
-		$colorMainBackgroundRGB = join(',', $this->util->hexToRGB($colorMainBackground));
+		$colorMainBackgroundRGBLight = join(',', $this->util->hexToRGB($colorMainBackground));
+		$colorMainBackgroundRGBDark = join(',', $this->util->hexToRGB('#02102B'));
+		$colorMainBackgroundRGB = 'light-dark(' . $colorMainBackgroundRGBLight . ', ' . $colorMainBackgroundRGBDark . ')';
 		$colorBoxShadow = $this->util->darken($colorMainBackground, 70);
 		$colorBoxShadowRGB = join(',', $this->util->hexToRGB($colorBoxShadow));
 
@@ -202,9 +205,10 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
 			'--header-height' => '64px',
 			'--color-main-background' => $ionColorMainBackground,
-			'--color-main-background-rgb' => $colorMainBackgroundRGB,
+			'--color-main-background-rgb-light' => $colorMainBackgroundRGBLight,
+			'--color-main-background-rgb-dark' => $colorMainBackgroundRGBDark,
 			'--color-main-background-translucent' => 'rgba(var(--color-main-background-rgb), .97)',
-			'--color-main-background-blur' => 'rgba(var(--color-main-background-rgb), .8)',
+			'--color-main-background-blur' => 'light-dark(rgba(var(--color-main-background-rgb-light), .8), rgba(var(--color-main-background-rgb-dark), .8))',
 			'--color-primary' => $colorPrimary,
 			'--color-primary-element' => $colorPrimary,
 			'--color-primary-element-light' => 'light-dark( #e5ebf3, var(--ion-color-blue-b5))',
