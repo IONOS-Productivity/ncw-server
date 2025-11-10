@@ -126,6 +126,13 @@ jobs:
               "makefile_target": "build_tasks_app"
             },
             {
+              "name": "password_policy",
+              "path": "apps-external/password_policy",
+              "has_npm": true,
+              "has_composer": true,
+              "makefile_target": "build_password_policy_app"
+            },
+            {
               "name": "spreed",
               "path": "apps-external/spreed",
               "has_npm": true,
