@@ -1,12 +1,13 @@
-name: Build Nextcloud Workspace artifact
+name: Build Nextcloud Workspace artifact (Optimized)
 
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-FileCopyrightText: 2025 STRATO AG
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# The Nextcloud Workspace source is packaged as a container image.
-# This is a workaround because releases cannot be created without tags,
-# and we want to be able to create snapshots from branches.
+# Optimized build workflow that uses cache-based detection
+# - Checks cache for each app's current SHA
+# - Only builds apps with no cached build
+# - Significantly reduces build time through smart caching
 
 on:
   pull_request:
@@ -48,21 +49,23 @@ jobs:
   prepare-matrix:
     runs-on: ubuntu-latest
     outputs:
+      apps-to-build: ${{ steps.detect.outputs.apps-to-build }}
       external-apps-matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
           submodules: true
-          fetch-depth: '1'
+          fetch-depth: 1  # Shallow clone is fine - we only need current state
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y make jq
 
-      - name: Set matrix
+      - name: Generate full apps matrix
         id: set-matrix
         run: |
           # Create matrix configuration as a compact JSON string
+          # This is the same as the original workflow
           matrix='[
             {
               "name": "activity",
@@ -512,6 +515,91 @@ jobs:
             exit 1
           fi
 
+      - name: Collect apps and their SHAs for cache-based building
+        id: detect
+        run: |
+          set -e  # Exit on error
+          set -u  # Exit on undefined variable
+          set -o pipefail  # Exit if any command in pipeline fails
+
+          echo "Collecting app SHAs for cache-based building..."
+          echo "(Cache checking happens in parallel build jobs)"
+          echo ""
+
+          # Get the matrix from previous step
+          MATRIX='${{ steps.set-matrix.outputs.matrix }}'
+
+          # Build JSON array for apps that actually need building
+          APPS_TO_BUILD="[]"
+          APPS_CHECKED=0
+          APPS_CACHED=0
+          APPS_TO_BUILD_COUNT=0
+
+          # Create temporary file for cache check results
+          CACHE_CHECK_RESULTS=$(mktemp)
+
+          # Iterate through each app in the matrix
+          while IFS= read -r app_json; do
+            APP_NAME=$(echo "$app_json" | jq -r '.name')
+            APP_PATH=$(echo "$app_json" | jq -r '.path')
+
+            APPS_CHECKED=$((APPS_CHECKED + 1))
+
+            # Get current submodule SHA
+            if [ -d "$APP_PATH" ]; then
+              CURRENT_SHA=$(git -C "$APP_PATH" rev-parse HEAD 2>/dev/null || echo "")
+            else
+              echo "⊘ $APP_NAME - directory not found, will build"
+              APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "unknown" '. + [{name: $app, sha: $sha}]')
+              APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
+              continue
+            fi
+
+            if [ -z "$CURRENT_SHA" ]; then
+              echo "⊘ $APP_NAME - not a git repo, will build"
+              APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "unknown" '. + [{name: $app, sha: $sha}]')
+              APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
+              continue
+            fi
+
+            # Cache key that would be used for this app
+            CACHE_KEY="app-build-${APP_NAME}-${CURRENT_SHA}"
+
+            # Check if cache exists using GitHub API
+            # We'll use a simple approach: try to restore with lookup-only via actions/cache API
+            # For now, we'll mark all apps to build and let the build job check cache
+            # (GitHub Actions doesn't provide easy cache lookup in bash)
+
+            echo "  $APP_NAME (SHA: ${CURRENT_SHA:0:8}) - cache key: $CACHE_KEY"
+
+            # Since we can't easily check cache existence here, we'll add all apps
+            # The build job will use lookup-only to check and skip if cached
+            APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '. + [{name: $app, sha: $sha}]')
+            APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
+
+          done < <(echo "$MATRIX" | jq -c '.[]')
+
+          echo ""
+          echo "Summary:"
+          echo "  Apps checked: $APPS_CHECKED"
+          echo "  Apps to build/check: $APPS_TO_BUILD_COUNT"
+
+          # Validate that we built valid JSON
+          if ! echo "$APPS_TO_BUILD" | jq empty 2>/dev/null; then
+            echo "ERROR: Failed to build valid JSON for apps-to-build"
+            echo "Content: $APPS_TO_BUILD"
+            exit 1
+          fi
+
+          # Output app list with SHAs for the build job to use
+          # Use proper multiline output format for GitHub Actions
+          echo "apps-to-build<<EOF" >> $GITHUB_OUTPUT
+          echo "$APPS_TO_BUILD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo ""
+          echo "Build jobs will check cache and skip if cached build exists"
+
   build-external-apps:
     runs-on: ubuntu-latest
     needs: prepare-matrix
@@ -526,14 +614,65 @@ jobs:
         app: ${{ fromJson(needs.prepare-matrix.outputs.external-apps-matrix) }}
 
     steps:
+      # Get current SHA for this app's submodule
+      - name: Get submodule SHA
+        id: get-sha
+        run: |
+          # We'll check cache based on the SHA stored in detect output
+          APPS_TO_BUILD='${{ needs.prepare-matrix.outputs.apps-to-build }}'
+          APP_NAME='${{ matrix.app.name }}'
+
+          # Extract SHA for this app from the apps-to-build list
+          APP_SHA=$(echo "$APPS_TO_BUILD" | jq -r --arg name "$APP_NAME" '.[] | select(.name == $name) | .sha')
+
+          if [ -z "$APP_SHA" ]; then
+            echo "⚠️ Could not find SHA for $APP_NAME, will build"
+            echo "should-build=true" >> $GITHUB_OUTPUT
+            echo "app-sha=unknown" >> $GITHUB_OUTPUT
+          else
+            echo "app-sha=$APP_SHA" >> $GITHUB_OUTPUT
+            echo "SHA for $APP_NAME: ${APP_SHA:0:12}"
+          fi
+
+      # Try to restore from cache based on SHA
+      - name: Restore cached build artifacts
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ matrix.app.path }}
+          key: app-build-${{ matrix.app.name }}-${{ steps.get-sha.outputs.app-sha }}
+          lookup-only: true  # Just check if cache exists, don't restore yet
+
+      # Determine if we need to build
+      - name: Check if build needed
+        id: should-build
+        run: |
+          if [ "${{ steps.cache-restore.outputs.cache-hit }}" = "true" ]; then
+            echo "should-build=false" >> $GITHUB_OUTPUT
+            echo "✓ Using cached build for ${{ matrix.app.name }} (SHA: ${{ steps.get-sha.outputs.app-sha }})"
+          else
+            echo "should-build=true" >> $GITHUB_OUTPUT
+            echo "⚡ Building ${{ matrix.app.name }} (SHA: ${{ steps.get-sha.outputs.app-sha }}) - no cache found"
+          fi
+
+      # Checkout only if we need to build
       - name: Checkout server
+        if: steps.should-build.outputs.should-build == 'true'
         uses: actions/checkout@v5
         with:
           submodules: true
-          fetch-depth: '1'
+          fetch-depth: 1
+
+      # Restore cache for real if building (to get the built files)
+      - name: Restore cached build for upload
+        if: steps.should-build.outputs.should-build == 'false'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ matrix.app.path }}
+          key: app-build-${{ matrix.app.name }}-${{ steps.get-sha.outputs.app-sha }}
 
       - name: Set up node with version from package.json's engines
-        if: matrix.app.has_npm
+        if: steps.should-build.outputs.should-build == 'true' && matrix.app.has_npm
         uses: actions/setup-node@v5
         with:
           node-version-file: "package.json"
@@ -541,7 +680,7 @@ jobs:
           cache-dependency-path: ${{ matrix.app.path }}/package-lock.json
 
       - name: Setup PHP with PECL extension
-        if: matrix.app.has_composer
+        if: steps.should-build.outputs.should-build == 'true' && matrix.app.has_composer
         uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
         with:
           tools: composer:v2
@@ -550,7 +689,7 @@ jobs:
           runner: ubuntu-latest
 
       - name: Cache Composer dependencies for ${{ matrix.app.name }}
-        if: matrix.app.has_composer
+        if: steps.should-build.outputs.should-build == 'true' && matrix.app.has_composer
         uses: actions/cache@v4
         with:
           path: ${{ matrix.app.path }}/vendor
@@ -559,7 +698,16 @@ jobs:
             ${{ runner.os }}-composer-${{ matrix.app.name }}-
 
       - name: Build ${{ matrix.app.name }} app
+        if: steps.should-build.outputs.should-build == 'true'
         run: make -f IONOS/Makefile ${{ matrix.app.makefile_target }}
+
+      # Save built app to cache for future runs
+      - name: Save build artifacts to cache
+        if: steps.should-build.outputs.should-build == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ matrix.app.path }}
+          key: app-build-${{ matrix.app.name }}-${{ steps.get-sha.outputs.app-sha }}
 
       - name: Upload ${{ matrix.app.name }} build artifacts
         uses: actions/upload-artifact@v4
