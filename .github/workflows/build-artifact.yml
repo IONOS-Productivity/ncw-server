@@ -523,7 +523,6 @@ jobs:
           set -o pipefail  # Exit if any command in pipeline fails
 
           echo "Collecting app SHAs for cache-based building..."
-          echo "(Cache checking happens in parallel build jobs)"
           echo ""
 
           # Get the matrix from previous step
@@ -532,11 +531,15 @@ jobs:
           # Build JSON array for apps that actually need building
           APPS_TO_BUILD="[]"
           APPS_CHECKED=0
-          APPS_CACHED=0
           APPS_TO_BUILD_COUNT=0
 
-          # Create temporary file for cache check results
-          CACHE_CHECK_RESULTS=$(mktemp)
+          # Create temporary directory for cache check results
+          TEMP_DIR=$(mktemp -d)
+
+          echo "### 📦 Cache Status Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| App | SHA | Cache Key | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-----|-----------|--------|" >> $GITHUB_STEP_SUMMARY
 
           # Iterate through each app in the matrix
           while IFS= read -r app_json; do
@@ -550,6 +553,7 @@ jobs:
               CURRENT_SHA=$(git -C "$APP_PATH" rev-parse HEAD 2>/dev/null || echo "")
             else
               echo "⊘ $APP_NAME - directory not found, will build"
+              echo "| $APP_NAME | N/A | N/A | ⊘ Directory not found |" >> $GITHUB_STEP_SUMMARY
               APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "unknown" '. + [{name: $app, sha: $sha}]')
               APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
               continue
@@ -557,6 +561,7 @@ jobs:
 
             if [ -z "$CURRENT_SHA" ]; then
               echo "⊘ $APP_NAME - not a git repo, will build"
+              echo "| $APP_NAME | N/A | N/A | ⊘ Not a git repo |" >> $GITHUB_STEP_SUMMARY
               APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "unknown" '. + [{name: $app, sha: $sha}]')
               APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
               continue
@@ -564,25 +569,35 @@ jobs:
 
             # Cache key that would be used for this app
             CACHE_KEY="app-build-${APP_NAME}-${CURRENT_SHA}"
+            SHORT_SHA="${CURRENT_SHA:0:8}"
 
-            # Check if cache exists using GitHub API
-            # We'll use a simple approach: try to restore with lookup-only via actions/cache API
-            # For now, we'll mark all apps to build and let the build job check cache
-            # (GitHub Actions doesn't provide easy cache lookup in bash)
+            echo "  Checking $APP_NAME (SHA: $SHORT_SHA)..."
 
-            echo "  $APP_NAME (SHA: ${CURRENT_SHA:0:8}) - cache key: $CACHE_KEY"
+            # Note: We collect all apps here. The actual cache existence check
+            # happens in the build job using actions/cache/restore with lookup-only
+            # because GitHub Actions doesn't provide a simple way to check cache
+            # existence in bash without using the cache action.
+            echo "| $APP_NAME | \`$SHORT_SHA\` | \`$CACHE_KEY\` | ⏳ Will check in build job |" >> $GITHUB_STEP_SUMMARY
 
-            # Since we can't easily check cache existence here, we'll add all apps
-            # The build job will use lookup-only to check and skip if cached
             APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '. + [{name: $app, sha: $sha}]')
             APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
 
           done < <(echo "$MATRIX" | jq -c '.[]')
 
+          # Clean up temp directory
+          rm -rf "$TEMP_DIR"
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Summary:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Apps checked: $APPS_CHECKED" >> $GITHUB_STEP_SUMMARY
+          echo "- Apps to build/verify: $APPS_TO_BUILD_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> **Note:** Cache existence is verified in parallel during the build job for each app." >> $GITHUB_STEP_SUMMARY
+
           echo ""
           echo "Summary:"
           echo "  Apps checked: $APPS_CHECKED"
-          echo "  Apps to build/check: $APPS_TO_BUILD_COUNT"
+          echo "  Apps to build/verify: $APPS_TO_BUILD_COUNT"
 
           # Validate that we built valid JSON
           if ! echo "$APPS_TO_BUILD" | jq empty 2>/dev/null; then
@@ -598,7 +613,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
           echo ""
-          echo "Build jobs will check cache and skip if cached build exists"
+          echo "✓ Build jobs will check cache and skip if cached build exists"
 
   build-external-apps:
     runs-on: ubuntu-latest
