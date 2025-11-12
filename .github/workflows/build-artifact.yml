@@ -51,6 +51,7 @@ jobs:
     outputs:
       apps-to-build: ${{ steps.detect.outputs.apps-to-build }}
       external-apps-matrix: ${{ steps.set-matrix.outputs.matrix }}
+      has-cached-apps: ${{ steps.detect.outputs.has-cached-apps }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -621,6 +622,14 @@ jobs:
           echo "$APPS_TO_BUILD" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+          # Determine if there are cached apps by comparing counts
+          # If apps-to-build count is less than total apps, some are cached
+          if [ $APPS_TO_BUILD_COUNT -lt $APPS_CHECKED ]; then
+            echo "has-cached-apps=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-cached-apps=false" >> $GITHUB_OUTPUT
+          fi
+
           echo ""
           if [ $APPS_TO_BUILD_COUNT -eq 0 ]; then
             echo "🎉 All apps are cached! No builds needed."
@@ -727,8 +736,8 @@ jobs:
   restore-cached-apps:
     runs-on: ubuntu-latest
     needs: prepare-matrix
-    # Only run if there are cached apps (when apps-to-build is not the full matrix)
-    if: needs.prepare-matrix.outputs.apps-to-build != needs.prepare-matrix.outputs.external-apps-matrix
+    # Only run if there are cached apps (when not all apps need to be built)
+    if: needs.prepare-matrix.outputs.has-cached-apps == 'true'
 
     permissions:
       contents: read
