@@ -671,8 +671,6 @@ jobs:
           echo "has-npm=$HAS_NPM" >> $GITHUB_OUTPUT
           echo "has-composer=$HAS_COMPOSER" >> $GITHUB_OUTPUT
           echo "makefile-target=$MAKEFILE_TARGET" >> $GITHUB_OUTPUT
-          echo "app-sha=${{ matrix.app_info.sha }}" >> $GITHUB_OUTPUT
-
           echo "Building $APP_NAME from $APP_PATH (SHA: ${{ matrix.app_info.sha }})"
 
       - name: Checkout server
