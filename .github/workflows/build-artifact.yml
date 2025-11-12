@@ -726,7 +726,7 @@ jobs:
         if: success()
         run: |
           echo "### ✅ Built ${{ matrix.app_info.name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **SHA:** \`${{ steps.app-config.outputs.app-sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA:** \`${{ matrix.app_info.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Path:** ${{ steps.app-config.outputs.path }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** Success" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
