@@ -54,6 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       apps-to-build: ${{ steps.detect.outputs.apps-to-build }}
+      apps-to-restore: ${{ steps.detect.outputs.apps-to-restore }}
       external-apps-matrix: ${{ steps.set-matrix.outputs.matrix }}
       has-cached-apps: ${{ steps.detect.outputs.has-cached-apps }}
       apps-sha-map: ${{ steps.detect.outputs.apps-sha-map }}
@@ -538,6 +539,8 @@ jobs:
 
           # Build JSON array for apps that actually need building
           APPS_TO_BUILD="[]"
+          # Build JSON array for apps that need restoration from cache
+          APPS_TO_RESTORE="[]"
           APPS_CHECKED=0
           APPS_CACHED=0
           APPS_TO_BUILD_COUNT=0
@@ -591,6 +594,8 @@ jobs:
               APPS_CACHED=$((APPS_CACHED + 1))
               echo "✓ cached"
               echo "| $APP_NAME | \`$SHORT_SHA\` | \`$CACHE_KEY\` | ✅ Cached |" >> $GITHUB_STEP_SUMMARY
+              # Add to restore list with SHA for cache restoration
+              APPS_TO_RESTORE=$(echo "$APPS_TO_RESTORE" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '. + [{name: $app, sha: $sha}]')
             else
               echo "⚡ needs build"
               echo "| $APP_NAME | \`$SHORT_SHA\` | \`$CACHE_KEY\` | 🔨 Needs build |" >> $GITHUB_STEP_SUMMARY
@@ -626,10 +631,21 @@ jobs:
             exit 1
           fi
 
+          if ! echo "$APPS_TO_RESTORE" | jq empty 2>/dev/null; then
+            echo "ERROR: Failed to build valid JSON for apps-to-restore"
+            echo "Content: $APPS_TO_RESTORE"
+            exit 1
+          fi
+
           # Output app list with SHAs for the build job to use
           # Use proper multiline output format for GitHub Actions
           echo "apps-to-build<<EOF" >> $GITHUB_OUTPUT
           echo "$APPS_TO_BUILD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Output app list with SHAs for the restore job to use
+          echo "apps-to-restore<<EOF" >> $GITHUB_OUTPUT
+          echo "$APPS_TO_RESTORE" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
           # Output the SHA map for all apps
@@ -760,8 +776,8 @@ jobs:
   restore-cached-apps:
     runs-on: ubuntu-latest
     needs: prepare-matrix
-    # Only run if there are cached apps (when not all apps need to be built)
-    if: needs.prepare-matrix.outputs.has-cached-apps == 'true'
+    # Only run if there are cached apps to restore
+    if: needs.prepare-matrix.outputs.apps-to-restore != '[]'
 
     permissions:
       contents: read
@@ -770,43 +786,41 @@ jobs:
     strategy:
       max-parallel: 20
       matrix:
-        app: ${{ fromJson(needs.prepare-matrix.outputs.external-apps-matrix) }}
+        # Use the filtered list of apps that need restoration from cache
+        app_info: ${{ fromJson(needs.prepare-matrix.outputs.apps-to-restore) }}
 
     steps:
-      - name: Check if app needs restoring from cache
-        id: check-cache
+      - name: Get app configuration from full matrix
+        id: app-config
         run: |
-          APPS_TO_BUILD='${{ needs.prepare-matrix.outputs.apps-to-build }}'
-          APP_NAME='${{ matrix.app.name }}'
-          APPS_SHA_MAP='${{ needs.prepare-matrix.outputs.apps-sha-map }}'
+          # Get the full matrix to look up app configuration
+          FULL_MATRIX='${{ needs.prepare-matrix.outputs.external-apps-matrix }}'
+          APP_NAME='${{ matrix.app_info.name }}'
 
-          # Check if this app is in the apps-to-build list
-          IN_BUILD_LIST=$(echo "$APPS_TO_BUILD" | jq -r --arg name "$APP_NAME" 'any(.[]; .name == $name)')
+          # Find the app configuration in the full matrix
+          APP_CONFIG=$(echo "$FULL_MATRIX" | jq -c --arg name "$APP_NAME" '.[] | select(.name == $name)')
 
-          if [ "$IN_BUILD_LIST" = "true" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "⏭️  Skipping $APP_NAME - will be built by build job"
-          else
-            # Get the SHA from the SHA map
-            APP_SHA=$(echo "$APPS_SHA_MAP" | jq -r --arg name "$APP_NAME" '.[$name] // "unknown"')
-            echo "app-sha=$APP_SHA" >> $GITHUB_OUTPUT
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "📦 Will restore $APP_NAME from cache (SHA: ${APP_SHA:0:12})"
+          if [ -z "$APP_CONFIG" ]; then
+            echo "ERROR: Could not find app '$APP_NAME' in full matrix"
+            exit 1
           fi
 
+          # Extract and output app properties
+          echo "path=$(echo "$APP_CONFIG" | jq -r '.path')" >> $GITHUB_OUTPUT
+          echo "name=$(echo "$APP_CONFIG" | jq -r '.name')" >> $GITHUB_OUTPUT
+
+          echo "📦 Restoring $APP_NAME from cache (SHA: ${{ matrix.app_info.sha }})"
 
       - name: Restore cached build from cache
-        if: steps.check-cache.outputs.skip == 'false'
         uses: actions/cache/restore@v4
         with:
-          path: ${{ matrix.app.path }}
-          key: ${{ env.CACHE_VERSION }}-app-build-${{ matrix.app.name }}-${{ steps.check-cache.outputs.app-sha }}
+          path: ${{ steps.app-config.outputs.path }}
+          key: ${{ env.CACHE_VERSION }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
           fail-on-cache-miss: true
 
       - name: Validate cached build
-        if: steps.check-cache.outputs.skip == 'false'
         run: |
-          APP_PATH="${{ matrix.app.path }}"
+          APP_PATH="${{ steps.app-config.outputs.path }}"
 
           # Check that the directory exists and is not empty
           if [ ! -d "$APP_PATH" ] || [ -z "$(ls -A $APP_PATH)" ]; then
@@ -820,17 +834,16 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Cache validation passed for ${{ matrix.app.name }}"
+          echo "✅ Cache validation passed for ${{ matrix.app_info.name }}"
 
-      - name: Upload cached ${{ matrix.app.name }} build artifacts
-        if: steps.check-cache.outputs.skip == 'false'
+      - name: Upload cached ${{ matrix.app_info.name }} build artifacts
         uses: actions/upload-artifact@v5
         with:
           retention-days: 1
-          name: external-app-build-${{ matrix.app.name }}
+          name: external-app-build-${{ matrix.app_info.name }}
           path: |
-            ${{ matrix.app.path }}
-            !${{ matrix.app.path }}/node_modules
+            ${{ steps.app-config.outputs.path }}
+            !${{ steps.app-config.outputs.path }}/node_modules
 
   build-artifact:
     runs-on: ubuntu-latest
