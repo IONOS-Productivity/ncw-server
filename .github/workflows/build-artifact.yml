@@ -41,6 +41,10 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   ARTIFACTORY_REPOSITORY_SNAPSHOT: ionos-productivity-ncwserver-snapshot
+  # Cache version - increment this to invalidate all caches when build process changes
+  # Update when: Node.js version changes, PHP version changes, build scripts modified, etc.
+  # Format: v<major>.<minor> (e.g., v1.0, v1.1, v2.0)
+  CACHE_VERSION: v1.0
 
 permissions:
   contents: read
@@ -569,7 +573,8 @@ jobs:
             fi
 
             # Cache key that would be used for this app
-            CACHE_KEY="app-build-${APP_NAME}-${CURRENT_SHA}"
+            # Format: <version>-app-build-<app-name>-<sha>
+            CACHE_KEY="${{ env.CACHE_VERSION }}-app-build-${APP_NAME}-${CURRENT_SHA}"
             SHORT_SHA="${CURRENT_SHA:0:8}"
 
             echo -n "  Checking $APP_NAME (SHA: $SHORT_SHA)... "
@@ -731,7 +736,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ steps.app-config.outputs.path }}
-          key: app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
+          key: ${{ env.CACHE_VERSION }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
 
       - name: Upload ${{ matrix.app_info.name }} build artifacts
         uses: actions/upload-artifact@v4
@@ -797,7 +802,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ matrix.app.path }}
-          key: app-build-${{ matrix.app.name }}-${{ steps.get-sha.outputs.app-sha }}
+          key: ${{ env.CACHE_VERSION }}-app-build-${{ matrix.app.name }}-${{ steps.get-sha.outputs.app-sha }}
           fail-on-cache-miss: true
 
       - name: Validate cached build
