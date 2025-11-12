@@ -713,7 +713,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ steps.app-config.outputs.path }}
-          key: app-build-${{ matrix.app_info.name }}-${{ steps.app-config.outputs.app-sha }}
+          key: app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
 
       - name: Upload ${{ matrix.app_info.name }} build artifacts
         uses: actions/upload-artifact@v4
