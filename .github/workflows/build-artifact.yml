@@ -974,7 +974,10 @@ jobs:
     runs-on: self-hosted
     # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-stable" branch push defined in the on:push:branches
     if: |
+      always() &&
       (github.event_name == 'pull_request' || github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable') &&
+      (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
+      (needs.restore-cached-apps.result == 'success' || needs.restore-cached-apps.result == 'skipped') &&
       needs.build-artifact.result == 'success'
 
     name: Push to artifactory
@@ -1098,7 +1101,11 @@ jobs:
   nextcloud-workspace-artifact-to-ghcr_io:
     runs-on: ubuntu-latest
     # Only run if build-artifact succeeded
-    if: needs.build-artifact.result == 'success'
+    if: |
+      always() &&
+      (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
+      (needs.restore-cached-apps.result == 'success' || needs.restore-cached-apps.result == 'skipped') &&
+      needs.build-artifact.result == 'success'
 
     permissions:
       contents: read
