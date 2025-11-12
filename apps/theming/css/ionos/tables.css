@@ -37,7 +37,11 @@
 
 			li.action:has(.action-checkbox) {
 				&:hover {
+<<<<<<< HEAD
 					background-color: var(--ion-list-background-hover);
+=======
+					background-color: var(--ion-files-list-background-hover);
+>>>>>>> d21ae9bac25 (IONOS(theming): fix tables app colors)
 				}
 			}
 
