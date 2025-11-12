@@ -779,7 +779,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ matrix.app.path }}
-          key: app-build-${{ matrix.app.name }}-${{ steps.get-sha.outputs.app-sha }}
+          key: app-build-${{ matrix.app.name }}-${{ matrix.app.sha }}
           fail-on-cache-miss: true
 
       - name: Upload cached ${{ matrix.app.name }} build artifacts
