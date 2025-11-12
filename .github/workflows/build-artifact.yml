@@ -705,7 +705,7 @@ jobs:
 
       - name: Set up node with version from package.json's engines
         if: steps.app-config.outputs.has-npm == 'true'
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version-file: "package.json"
           cache: 'npm'
@@ -749,7 +749,7 @@ jobs:
           key: ${{ env.CACHE_VERSION }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
 
       - name: Upload ${{ matrix.app_info.name }} build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           retention-days: 1
           name: external-app-build-${{ matrix.app_info.name }}
@@ -832,7 +832,7 @@ jobs:
 
       - name: Upload cached ${{ matrix.app.name }} build artifacts
         if: steps.check-cache.outputs.skip == 'false'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           retention-days: 1
           name: external-app-build-${{ matrix.app.name }}
@@ -864,7 +864,7 @@ jobs:
           fetch-depth: '1'
 
       - name: Download build external apps
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           pattern: external-app-build-*
           path: apps-external/
@@ -914,7 +914,7 @@ jobs:
           done
 
       - name: Set up node with version from package.json's engines
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version-file: "package.json"
           cache: 'npm'
@@ -968,7 +968,7 @@ jobs:
           echo "NC_VERSION=$NC_VERSION" >> $GITHUB_OUTPUT
 
       - name: Upload artifact result for job build-artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           retention-days: 30
           name: nextcloud_workspace_build_artifact
@@ -1030,7 +1030,7 @@ jobs:
           fi
 
       - name: Download artifact zip
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: nextcloud_workspace_build_artifact
 
@@ -1127,7 +1127,7 @@ jobs:
 
     steps:
       - name: Download artifact zip
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: nextcloud_workspace_build_artifact
 
