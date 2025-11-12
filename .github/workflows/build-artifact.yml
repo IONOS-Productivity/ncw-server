@@ -794,14 +794,6 @@ jobs:
             echo "📦 Will restore $APP_NAME from cache (SHA: ${APP_SHA:0:12})"
           fi
 
-      - name: Checkout server (sparse)
-        if: steps.check-cache.outputs.skip == 'false'
-        uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            ${{ matrix.app.path }}
-          fetch-depth: 1
-
 
       - name: Restore cached build from cache
         if: steps.check-cache.outputs.skip == 'false'
