@@ -98,6 +98,7 @@ jobs:
         id: detect
         env:
           GH_TOKEN: ${{ github.token }}
+          CACHE_VERSION: ${{ env.CACHE_VERSION }}
         run: |
           set -e  # Exit on error
           set -u  # Exit on undefined variable
@@ -154,7 +155,7 @@ jobs:
 
             # Cache key that would be used for this app
             # Format: <version>-app-build-<app-name>-<sha>
-            CACHE_KEY="${{ env.CACHE_VERSION }}-app-build-${APP_NAME}-${CURRENT_SHA}"
+            CACHE_KEY="${CACHE_VERSION}-app-build-${APP_NAME}-${CURRENT_SHA}"
             SHORT_SHA="${CURRENT_SHA:0:8}"
 
             echo -n "  Checking $APP_NAME (SHA: $SHORT_SHA)... "
