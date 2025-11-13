@@ -184,7 +184,7 @@ jobs:
           echo "- 🔨 Apps needing build: $APPS_TO_BUILD_COUNT" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ $APPS_CACHED -gt 0 ]; then
+          if [ $APPS_CACHED -gt 0 ] && [ $APPS_CHECKED -gt 0 ]; then
             CACHE_HIT_PERCENT=$((APPS_CACHED * 100 / APPS_CHECKED))
             echo "**Cache hit rate: ${CACHE_HIT_PERCENT}%** 🎯" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
