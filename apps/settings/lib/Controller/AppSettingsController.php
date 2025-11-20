@@ -92,6 +92,7 @@ class AppSettingsController extends Controller {
 		$this->initialState->provideInitialState('appstoreBundles', $this->getBundles());
 		$this->initialState->provideInitialState('appstoreDeveloperDocs', $this->urlGenerator->linkToDocs('developer-manual'));
 		$this->initialState->provideInitialState('appstoreUpdateCount', count($this->getAppsWithUpdates()));
+		$this->initialState->provideInitialState('devDocsUrl', $this->config->getAppValue('theming', 'devDocsUrl', ''));
 
 		if ($this->appManager->isInstalled('app_api')) {
 			try {
