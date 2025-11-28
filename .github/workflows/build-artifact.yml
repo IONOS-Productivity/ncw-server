@@ -121,11 +121,32 @@ jobs:
               "makefile_target": "build_end_to_end_encryption_app"
             },
             {
+              "name": "files_fulltextsearch",
+              "path": "apps-external/files_fulltextsearch",
+              "has_npm": false,
+              "has_composer": true,
+              "makefile_target": "build_files_fulltextsearch_app"
+            },
+            {
               "name": "forms",
               "path": "apps-external/forms",
               "has_npm": true,
               "has_composer": true,
               "makefile_target": "build_forms_app"
+            },
+            {
+              "name": "fulltextsearch",
+              "path": "apps-external/fulltextsearch",
+              "has_npm": false,
+              "has_composer": true,
+              "makefile_target": "build_fulltextsearch_app"
+            },
+            {
+              "name": "fulltextsearch_elasticsearch",
+              "path": "apps-external/fulltextsearch_elasticsearch",
+              "has_npm": false,
+              "has_composer": true,
+              "makefile_target": "build_fulltextsearch_elasticsearch_app"
             },
             {
               "name": "groupfolders",

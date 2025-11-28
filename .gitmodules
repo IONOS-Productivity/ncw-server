@@ -88,3 +88,12 @@
 [submodule "apps-external/twofactor_totp"]
 	path = apps-external/twofactor_totp
 	url = git@github.com:nextcloud/twofactor_totp.git
+[submodule "apps-external/files_fulltextsearch"]
+	path = apps-external/files_fulltextsearch
+	url = git@github.com:nextcloud/files_fulltextsearch.git
+[submodule "apps-external/fulltextsearch"]
+	path = apps-external/fulltextsearch
+	url = git@github.com:nextcloud/fulltextsearch.git
+[submodule "apps-external/fulltextsearch_elasticsearch"]
+	path = apps-external/fulltextsearch_elasticsearch
+	url = git@github.com:alikakac/fulltextsearch_elasticsearch.git
