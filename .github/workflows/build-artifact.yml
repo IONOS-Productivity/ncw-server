@@ -75,6 +75,38 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y make jq
 
+      - name: Check configuration
+        run: |
+          echo ""
+          echo "### 🔧 Remote Trigger Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**DISABLE_REMOTE_TRIGGER value:** \`${{ vars.DISABLE_REMOTE_TRIGGER }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔧 Remote Trigger Configuration"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "DISABLE_REMOTE_TRIGGER = '${{ vars.DISABLE_REMOTE_TRIGGER }}'"
+          echo ""
+
+          if [ "${{ vars.DISABLE_REMOTE_TRIGGER }}" == "true" ]; then
+            echo "⚠️  Remote trigger is DISABLED"
+            echo "    The 'trigger-remote-dev-worflow' job will be SKIPPED"
+            echo "**Status:** ⚠️ Remote trigger is **DISABLED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The \`trigger-remote-dev-worflow\` job will be skipped." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To enable, delete the variable or set it to a value other than 'true' at:" >> $GITHUB_STEP_SUMMARY
+            echo "https://github.com/${{ github.repository }}/settings/variables/actions" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Remote trigger is ENABLED"
+            echo "   The 'trigger-remote-dev-worflow' job will proceed"
+            echo "**Status:** ✅ Remote trigger is **ENABLED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The \`trigger-remote-dev-worflow\` job will proceed to trigger the remote GitLab workflow." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
       - name: Generate apps matrix dynamically from Makefile
         id: set_matrix
         run: |
@@ -774,12 +806,15 @@ jobs:
     name: Trigger remote workflow
     needs: [prepare-matrix, build-artifact, upload-to-artifactory]
     # Trigger remote build on "ionos-dev|ionos-stable" branch *push* defined in the on:push:branches
+    # Can be disabled via repository variable 'DISABLE_REMOTE_TRIGGER' (set to 'true' to disable)
+    # Configure at: https://github.com/IONOS-Productivity/ncw-server/settings/variables/actions
     if: |
       github.event_name == 'push' &&
       (github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable') &&
       needs.prepare-matrix.result == 'success' &&
       needs.build-artifact.result == 'success' &&
-      needs.upload-to-artifactory.result == 'success'
+      needs.upload-to-artifactory.result == 'success' &&
+      vars.DISABLE_REMOTE_TRIGGER != 'true'
     steps:
       - name: Trigger remote workflow
         run: |
