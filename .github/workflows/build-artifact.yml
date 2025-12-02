@@ -31,10 +31,10 @@ on:
     branches:
       - ionos-dev
       - ionos-stable
-  workflow_dispatch:  # Manual trigger only for comparison testing
+  workflow_dispatch:  # Manual trigger to bypass all caches
     inputs:
       force_rebuild:
-        description: 'Force rebuild all apps (ignore cache)'
+        description: 'Force rebuild all apps and dependencies (bypass ALL caches)'
         required: false
         type: boolean
         default: false
@@ -106,12 +106,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CACHE_VERSION: ${{ env.CACHE_VERSION }}
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'false' }}
         run: |
           set -e  # Exit on error
           set -u  # Exit on undefined variable
           set -o pipefail  # Exit if any command in pipeline fails
 
           echo "Collecting app SHAs and checking cache status..."
+          echo "Force rebuild mode: $FORCE_REBUILD"
           echo ""
 
           # Get the matrix from previous step
@@ -125,9 +127,14 @@ jobs:
           APPS_CACHED=0
           APPS_TO_BUILD_COUNT=0
           APPS_SHA_MAP="{}"
+          echo ""
 
           echo "### 📦 Cache Status Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$FORCE_REBUILD" == "true" ]; then
+            echo "**🔄 FORCE REBUILD MODE ENABLED** - All caches bypassed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "| App | SHA | Cache Key | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|-----|-----------|--------|" >> $GITHUB_STEP_SUMMARY
 
@@ -166,6 +173,15 @@ jobs:
             SHORT_SHA="${CURRENT_SHA:0:8}"
 
             echo -n "  Checking $APP_NAME (SHA: $SHORT_SHA)... "
+
+            # If force rebuild is enabled, skip cache check and rebuild everything
+            if [ "$FORCE_REBUILD" == "true" ]; then
+              echo "🔄 force rebuild"
+              echo "| $APP_NAME | \`$SHORT_SHA\` | \`$CACHE_KEY\` | 🔄 Force rebuild |" >> $GITHUB_STEP_SUMMARY
+              APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '. + [{name: $app, sha: $sha}]')
+              APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
+              continue
+            fi
 
             # Check if cache exists using GitHub CLI
             CACHE_EXISTS="false"
@@ -311,7 +327,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version-file: "package.json"
-          cache: 'npm'
+          cache: ${{ github.event.inputs.force_rebuild != 'true' && 'npm' || '' }}
           cache-dependency-path: ${{ steps.app-config.outputs.path }}/package-lock.json
 
       - name: Setup PHP with PECL extension
@@ -324,7 +340,7 @@ jobs:
           runner: ubuntu-latest
 
       - name: Cache Composer dependencies for ${{ matrix.app_info.name }}
-        if: steps.app-config.outputs.has-composer == 'true'
+        if: steps.app-config.outputs.has-composer == 'true' && github.event.inputs.force_rebuild != 'true'
         uses: actions/cache@v4
         with:
           path: ${{ steps.app-config.outputs.path }}/vendor
@@ -489,7 +505,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version-file: "package.json"
-          cache: 'npm'
+          cache: ${{ github.event.inputs.force_rebuild != 'true' && 'npm' || '' }}
 
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install -y make zip unzip
@@ -506,6 +522,7 @@ jobs:
           runner: ubuntu-latest
 
       - name: Cache Composer dependencies
+        if: github.event.inputs.force_rebuild != 'true'
         uses: actions/cache@v4
         with:
           path: vendor
