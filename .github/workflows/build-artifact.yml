@@ -166,7 +166,7 @@ jobs:
           APPS_SHA_MAP="{}"
           echo ""
 
-          echo "### 📦 Cache Status Report" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Cache Status Report for (${{ github.ref }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "$FORCE_REBUILD" == "true" ]; then
             echo "**🔄 FORCE REBUILD MODE ENABLED** - All caches bypassed" >> $GITHUB_STEP_SUMMARY
@@ -221,8 +221,9 @@ jobs:
             fi
 
             # Check if cache exists using GitHub CLI
+            # Include --ref to access caches from the current ref (branch, PR, etc.)
             CACHE_EXISTS="false"
-            if ! CACHE_LIST=$(gh cache list --key "$CACHE_KEY" --json key --jq ".[].key" 2>&1); then
+            if ! CACHE_LIST=$(gh cache list --ref "${{ github.ref }}" --key "$CACHE_KEY" --json key --jq ".[].key" 2>&1); then
               echo "⚠️ Warning: Failed to query cache for $APP_NAME: $CACHE_LIST"
               echo "| $APP_NAME | \`$SHORT_SHA\` | \`$CACHE_KEY\` | ⚠️ Cache check failed - will build |" >> $GITHUB_STEP_SUMMARY
               APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '. + [{name: $app, sha: $sha}]')
