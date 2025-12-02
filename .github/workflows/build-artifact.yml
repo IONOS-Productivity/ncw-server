@@ -107,6 +107,11 @@ jobs:
           fi
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+      - name: List caches before restore
+        run: gh cache list
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Generate apps matrix dynamically from Makefile
         id: set_matrix
         run: |
