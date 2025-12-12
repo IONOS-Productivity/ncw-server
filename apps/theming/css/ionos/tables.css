@@ -14,15 +14,8 @@
 
 				/* Comment box */
 				.text-editor__wrapper .editor {
-					border: 1px solid var(--ion-context-menu-border);
-					background-color: var(--ion-surface-primary);
+					background-color: transparent;
 				}
-			}
-
-			/* Comment box */
-			.text-editor__wrapper .editor {
-				padding: 4px;
-				border: 1px solid transparent;
 			}
 
 			td button[data-cy="editRowBtn"] {
