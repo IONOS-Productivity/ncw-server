@@ -1,4 +1,5 @@
 <?php
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-FileCopyrightText: 2015 ownCloud, Inc.
@@ -19,7 +20,6 @@ use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
 use OCP\Files\AppData\IAppDataFactory;
 use OCP\Http\Client\IClientService;
-use OCP\IAppConfig;
 use OCP\IConfig;
 use OCP\IL10N;
 use OCP\INavigationManager;
@@ -34,45 +34,26 @@ use Test\TestCase;
  * Class AppSettingsControllerTest
  *
  * @package Tests\Settings\Controller
- *
- * @group DB
  */
+#[\PHPUnit\Framework\Attributes\Group('DB')]
 class AppSettingsControllerTest extends TestCase {
-	/** @var AppSettingsController */
-	private $appSettingsController;
-	/** @var IRequest|MockObject */
-	private $request;
-	/** @var IL10N|MockObject */
-	private $l10n;
-	/** @var IConfig|MockObject */
-	private $config;
-	/** @var IAppConfig|MockObject */
-	private $appConfig;
-	/** @var INavigationManager|MockObject */
-	private $navigationManager;
+	private IRequest&MockObject $request;
+	private IL10N&MockObject $l10n;
+	private IConfig&MockObject $config;
+	private INavigationManager&MockObject $navigationManager;
 	private AppManager&MockObject $appManager;
-	/** @var CategoryFetcher|MockObject */
-	private $categoryFetcher;
-	/** @var AppFetcher|MockObject */
-	private $appFetcher;
-	/** @var IFactory|MockObject */
-	private $l10nFactory;
-	/** @var BundleFetcher|MockObject */
-	private $bundleFetcher;
-	/** @var Installer|MockObject */
-	private $installer;
-	/** @var IURLGenerator|MockObject */
-	private $urlGenerator;
-	/** @var LoggerInterface|MockObject */
-	private $logger;
-	/** @var IInitialState|MockObject */
-	private $initialState;
-	/** @var IAppDataFactory|MockObject */
-	private $appDataFactory;
-	/** @var AppDiscoverFetcher|MockObject */
-	private $discoverFetcher;
-	/** @var IClientService|MockObject */
-	private $clientService;
+	private CategoryFetcher&MockObject $categoryFetcher;
+	private AppFetcher&MockObject $appFetcher;
+	private IFactory&MockObject $l10nFactory;
+	private BundleFetcher&MockObject $bundleFetcher;
+	private Installer&MockObject $installer;
+	private IURLGenerator&MockObject $urlGenerator;
+	private LoggerInterface&MockObject $logger;
+	private IInitialState&MockObject $initialState;
+	private IAppDataFactory&MockObject $appDataFactory;
+	private AppDiscoverFetcher&MockObject $discoverFetcher;
+	private IClientService&MockObject $clientService;
+	private AppSettingsController $appSettingsController;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -84,7 +65,6 @@ class AppSettingsControllerTest extends TestCase {
 			->method('t')
 			->willReturnArgument(0);
 		$this->config = $this->createMock(IConfig::class);
-		$this->appConfig = $this->createMock(IAppConfig::class);
 		$this->navigationManager = $this->createMock(INavigationManager::class);
 		$this->appManager = $this->createMock(AppManager::class);
 		$this->categoryFetcher = $this->createMock(CategoryFetcher::class);
@@ -116,7 +96,6 @@ class AppSettingsControllerTest extends TestCase {
 			$this->initialState,
 			$this->discoverFetcher,
 			$this->clientService,
-			$this->appConfig,
 		);
 	}
 
@@ -185,31 +164,14 @@ class AppSettingsControllerTest extends TestCase {
 			->method('getSystemValueBool')
 			->with('appstoreenabled', true)
 			->willReturn(true);
-		$this->appConfig
-			->expects($this->once())
-			->method('getValueBool')
-			->with('settings', 'display_documentation_link', true)
-			->willReturn(true);
 		$this->navigationManager
 			->expects($this->once())
 			->method('setActiveEntry')
 			->with('core_apps');
 
-		// Test that developer docs link is generated correctly
-		$this->urlGenerator
-			->expects($this->once())
-			->method('linkToDocs')
-			->with('developer-manual')
-			->willReturn('https://docs.nextcloud.com/server/latest/developer_manual/');
-
 		$this->initialState
 			->expects($this->exactly(4))
-			->method('provideInitialState')
-			->willReturnCallback(function ($key, $value) {
-				if ($key === 'appstoreDeveloperDocs') {
-					$this->assertEquals('https://docs.nextcloud.com/server/latest/developer_manual/', $value);
-				}
-			});
+			->method('provideInitialState');
 
 		$policy = new ContentSecurityPolicy();
 		$policy->addAllowedImageDomain('https://usercontent.apps.nextcloud.com');
@@ -235,31 +197,14 @@ class AppSettingsControllerTest extends TestCase {
 			->method('getSystemValueBool')
 			->with('appstoreenabled', true)
 			->willReturn(false);
-		$this->appConfig
-			->expects($this->once())
-			->method('getValueBool')
-			->with('settings', 'display_documentation_link', true)
-			->willReturn(true);
 		$this->navigationManager
 			->expects($this->once())
 			->method('setActiveEntry')
 			->with('core_apps');
 
-		// Test that developer docs link is still generated even when appstore is disabled
-		$this->urlGenerator
-			->expects($this->once())
-			->method('linkToDocs')
-			->with('developer-manual')
-			->willReturn('https://docs.nextcloud.com/server/latest/developer_manual/');
-
 		$this->initialState
 			->expects($this->exactly(4))
-			->method('provideInitialState')
-			->willReturnCallback(function ($key, $value) {
-				if ($key === 'appstoreDeveloperDocs') {
-					$this->assertEquals('https://docs.nextcloud.com/server/latest/developer_manual/', $value);
-				}
-			});
+			->method('provideInitialState');
 
 		$policy = new ContentSecurityPolicy();
 		$policy->addAllowedImageDomain('https://usercontent.apps.nextcloud.com');
@@ -273,89 +218,5 @@ class AppSettingsControllerTest extends TestCase {
 		$expected->setContentSecurityPolicy($policy);
 
 		$this->assertEquals($expected, $this->appSettingsController->viewApps());
-	}
-
-	public function testDeveloperDocumentationLinkHiddenWhenConfigured(): void {
-		$this->installer->expects($this->any())
-			->method('isUpdateAvailable')
-			->willReturn(false);
-		$this->bundleFetcher->expects($this->once())->method('getBundles')->willReturn([]);
-		$this->config
-			->expects($this->once())
-			->method('getSystemValueBool')
-			->with('appstoreenabled', true)
-			->willReturn(true);
-		$this->appConfig
-			->expects($this->once())
-			->method('getValueBool')
-			->with('settings', 'display_documentation_link', true)
-			->willReturn(false);
-		$this->navigationManager
-			->expects($this->once())
-			->method('setActiveEntry')
-			->with('core_apps');
-
-		// When display_documentation_link is false, linkToDocs should not be called
-		$this->urlGenerator
-			->expects($this->never())
-			->method('linkToDocs');
-
-		$providedStates = [];
-		$this->initialState
-			->expects($this->exactly(4))
-			->method('provideInitialState')
-			->willReturnCallback(function ($key, $value) use (&$providedStates) {
-				$providedStates[$key] = $value;
-			});
-
-		$this->appSettingsController->viewApps();
-
-		// Assert that the developer docs state was provided with an empty string
-		$this->assertArrayHasKey('appstoreDeveloperDocs', $providedStates);
-		$this->assertEquals('', $providedStates['appstoreDeveloperDocs']);
-	}
-
-	public function testDeveloperDocumentationLinkShownByDefault(): void {
-		$this->installer->expects($this->any())
-			->method('isUpdateAvailable')
-			->willReturn(false);
-		$this->bundleFetcher->expects($this->once())->method('getBundles')->willReturn([]);
-		$this->config
-			->expects($this->once())
-			->method('getSystemValueBool')
-			->with('appstoreenabled', true)
-			->willReturn(true);
-		$this->appConfig
-			->expects($this->once())
-			->method('getValueBool')
-			->with('settings', 'display_documentation_link', true)
-			->willReturn(true);
-		$this->navigationManager
-			->expects($this->once())
-			->method('setActiveEntry')
-			->with('core_apps');
-
-		$developerDocsUrl = 'https://docs.nextcloud.com/server/latest/developer_manual/';
-
-		// When display_documentation_link is true (default), linkToDocs should be called
-		$this->urlGenerator
-			->expects($this->once())
-			->method('linkToDocs')
-			->with('developer-manual')
-			->willReturn($developerDocsUrl);
-
-		$providedStates = [];
-		$this->initialState
-			->expects($this->exactly(4))
-			->method('provideInitialState')
-			->willReturnCallback(function ($key, $value) use (&$providedStates) {
-				$providedStates[$key] = $value;
-			});
-
-		$this->appSettingsController->viewApps();
-
-		// Assert that the developer docs state was provided with the correct URL
-		$this->assertArrayHasKey('appstoreDeveloperDocs', $providedStates);
-		$this->assertEquals($developerDocsUrl, $providedStates['appstoreDeveloperDocs']);
 	}
 }
