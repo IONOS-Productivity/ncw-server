@@ -1,0 +1,5 @@
+div.content.app-profile {
+	main#app-content-vue {
+		background-color: var(--color-main-background);
+	}
+}
