@@ -927,7 +927,12 @@ jobs:
     timeout-minutes: 5
     name: Debug Pipeline Status
     needs: [prepare-matrix, build-external-apps, build-artifact, upload-to-artifactory, nextcloud-workspace-artifact-to-ghcr_io, trigger-remote-dev-workflow]
-    if: always()  # Always run this job regardless of previous job status
+    # Run on failure or when manually triggered with force_rebuild to help debug issues
+    if: |
+      always() && (
+        failure() ||
+        github.event.inputs.force_rebuild == 'true'
+      )
 
     steps:
       - name: Collect and display pipeline status
