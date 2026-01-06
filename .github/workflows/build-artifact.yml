@@ -61,6 +61,7 @@ permissions:
 jobs:
   prepare-matrix:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       apps_to_build: ${{ steps.detect.outputs.apps_to_build }}
       apps_to_restore: ${{ steps.detect.outputs.apps_to_restore }}
@@ -196,6 +197,7 @@ jobs:
 
   build-external-apps:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: prepare-matrix
     # Only run if there are actually apps to build (prevents runner from starting)
     if: needs.prepare-matrix.outputs.has_apps_to_build == 'true'
@@ -388,6 +390,7 @@ jobs:
 
   build-artifact:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [prepare-matrix, build-external-apps]
     # Always run this job, even if build-external-apps is skipped
     if: |
@@ -621,6 +624,7 @@ jobs:
 
   upload-to-artifactory:
     runs-on: self-hosted
+    timeout-minutes: 20
     # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-stable" branch push defined in the on:push:branches
     if: |
       always() &&
@@ -751,6 +755,7 @@ jobs:
 
   nextcloud-workspace-artifact-to-ghcr_io:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Only run if build-artifact succeeded
     if: |
       always() &&
@@ -817,6 +822,7 @@ jobs:
 
   trigger-remote-dev-workflow:
     runs-on: self-hosted
+    timeout-minutes: 10
 
     name: Trigger remote workflow
     needs: [prepare-matrix, build-external-apps, build-artifact, upload-to-artifactory]
@@ -918,6 +924,7 @@ jobs:
 
   debug-pipeline-status:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     name: Debug Pipeline Status
     needs: [prepare-matrix, build-external-apps, build-artifact, upload-to-artifactory, nextcloud-workspace-artifact-to-ghcr_io, trigger-remote-dev-workflow]
     if: always()  # Always run this job regardless of previous job status
