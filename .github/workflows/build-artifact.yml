@@ -842,8 +842,7 @@ jobs:
       needs.prepare-matrix.result == 'success' &&
       (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
       needs.build-artifact.result == 'success' &&
-      needs.upload-to-artifactory.result == 'success' &&
-      vars.DISABLE_REMOTE_TRIGGER != 'true'
+      needs.upload-to-artifactory.result == 'success'
     steps:
       - name: Trigger remote workflow
         run: |
