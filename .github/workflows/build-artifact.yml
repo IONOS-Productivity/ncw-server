@@ -52,6 +52,8 @@ env:
   # Update when: Node.js version changes, PHP version changes, build scripts modified, etc.
   # Format: v<major>.<minor> (e.g., v1.0, v1.1, v2.0)
   CACHE_VERSION: v1.0
+  # PHP version used across all jobs - update here when upgrading
+  PHP_VERSION: '8.3'
 
 permissions:
   contents: read
@@ -255,7 +257,7 @@ jobs:
         if: steps.app-config.outputs.has-composer == 'true'
         uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
         with:
-          php-version: '8.3'
+          php-version: ${{ env.PHP_VERSION }}
           tools: composer:v2
           extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
         env:
@@ -562,7 +564,7 @@ jobs:
       - name: Setup PHP with PECL extension
         uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
         with:
-          php-version: '8.3'
+          php-version: ${{ env.PHP_VERSION }}
           tools: composer:v2
           extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
         env:
