@@ -257,13 +257,9 @@ jobs:
 
       - name: Setup PHP with PECL extension
         if: steps.app-config.outputs.has-composer == 'true'
-        uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
+        uses: ./.github/actions/setup-php
         with:
           php-version: ${{ env.PHP_VERSION }}
-          tools: composer:v2
-          extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
-        env:
-          runner: ubuntu-latest
 
       - name: Cache Composer dependencies for ${{ matrix.app_info.name }}
         if: steps.app-config.outputs.has-composer == 'true' && github.event.inputs.force_rebuild != 'true'
@@ -433,11 +429,9 @@ jobs:
         run: make --version && node --version && npm --version
 
       - name: Setup PHP with PECL extension
-        uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
+        uses: ./.github/actions/setup-php
         with:
           php-version: ${{ env.PHP_VERSION }}
-          tools: composer:v2
-          extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
         env:
           runner: ubuntu-latest
 

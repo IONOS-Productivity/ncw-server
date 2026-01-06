@@ -1,0 +1,26 @@
+name: 'Setup PHP Environment'
+description: 'Setup PHP with common extensions for Nextcloud development'
+
+inputs:
+  php-version:
+    description: 'PHP version to install'
+    required: true
+    default: '8.3'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup PHP ${{ inputs.php-version }}
+      uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 # v2.31.1
+      with:
+        php-version: ${{ inputs.php-version }}
+        tools: composer:v2
+        extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
+      env:
+        runner: ubuntu-latest
+
+    - name: Verify PHP installation
+      shell: bash
+      run: |
+        echo "📦 PHP Version: $(php -v | head -n1)"
+        echo "📦 Composer Version: $(composer --version)"
