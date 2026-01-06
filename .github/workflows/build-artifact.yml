@@ -623,7 +623,7 @@ jobs:
           exit 1 # make it red to grab attention
 
   upload-to-artifactory:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux]
     timeout-minutes: 20
     # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-stable" branch push defined in the on:push:branches
     if: |
@@ -821,7 +821,7 @@ jobs:
           exit 1 # make it red to grab attention
 
   trigger-remote-dev-workflow:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux]
     timeout-minutes: 10
 
     name: Trigger remote workflow
