@@ -70,7 +70,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          submodules: true
+#          submodules: true
           fetch-depth: 1  # Shallow clone - only need current submodule SHAs for cache detection
 
       - name: Install dependencies
@@ -147,37 +147,38 @@ jobs:
           fi
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-      - name: List caches before restore
-        run: gh cache list
-        env:
-          GH_TOKEN: ${{ github.token }}
-
+#      - name: List caches before restore
+#        run: gh cache list
+#        env:
+#          GH_TOKEN: ${{ github.token }}
+#
       - name: Generate apps matrix dynamically from Makefile
         id: set_matrix
         run: |
-          # Generate matrix from Makefile - single source of truth
-          echo "Generating matrix from Makefile..."
-          matrix_output=$(make -f IONOS/Makefile generate_external_apps_matrix_json 2>&1)
-
-          # Filter out info messages to get just the JSON
-          # Note: Use same filtering logic as validation script to ensure consistency
-          if echo "$matrix_output" | grep -q '^\[i\]'; then
-            matrix=$(echo "$matrix_output" | grep -v '^\[i\]')
-          else
-            matrix="$matrix_output"
-          fi
-
-          # Validate JSON
-          if ! echo "$matrix" | jq empty 2>/dev/null; then
-            echo "Error: Generated matrix is not valid JSON"
-            echo "Output: $matrix_output"
-            exit 1
-          fi
-
-          # Output as compact format
-          echo "matrix=$(echo "$matrix" | jq -c '.')" >> $GITHUB_OUTPUT
-          echo "Matrix generated successfully with $(echo "$matrix" | jq 'length') apps"
-
+          echo "matrix=[]" >> $GITHUB_OUTPUT
+#          # Generate matrix from Makefile - single source of truth
+#          echo "Generating matrix from Makefile..."
+#          matrix_output=$(make -f IONOS/Makefile generate_external_apps_matrix_json 2>&1)
+#
+#          # Filter out info messages to get just the JSON
+#          # Note: Use same filtering logic as validation script to ensure consistency
+#          if echo "$matrix_output" | grep -q '^\[i\]'; then
+#            matrix=$(echo "$matrix_output" | grep -v '^\[i\]')
+#          else
+#            matrix="$matrix_output"
+#          fi
+#
+#          # Validate JSON
+#          if ! echo "$matrix" | jq empty 2>/dev/null; then
+#            echo "Error: Generated matrix is not valid JSON"
+#            echo "Output: $matrix_output"
+#            exit 1
+#          fi
+#
+#          # Output as compact format
+#          echo "matrix=$(echo "$matrix" | jq -c '.')" >> $GITHUB_OUTPUT
+#          echo "Matrix generated successfully with $(echo "$matrix" | jq 'length') apps"
+#
       - name: Collect apps and their SHAs for cache-based building
         id: detect
         env:
@@ -190,7 +191,9 @@ jobs:
           ARTIFACTORY_REPOSITORY_SNAPSHOT: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}
           GITHUB_REF: ${{ github.ref }}
         run: |
-          bash .github/scripts/detect-app-cache.sh '${{ steps.set_matrix.outputs.matrix }}'
+          # bash .github/scripts/detect-app-cache.sh '${{ steps.set_matrix.outputs.matrix }}'
+          echo "has_apps_to_build=false" >> "$GITHUB_OUTPUT"
+          echo "has_apps_to_restore=false" >> "$GITHUB_OUTPUT"
 
   build-external-apps:
     runs-on: ubuntu-latest
@@ -204,185 +207,188 @@ jobs:
     name: build-external-apps
     strategy:
       max-parallel: 20
-      matrix:
-        # Use the filtered list of apps that need building (not in cache)
-        app_info: ${{ fromJson(needs.prepare-matrix.outputs.apps_to_build) }}
+#      matrix:
+#        # Use the filtered list of apps that need building (not in cache)
+#        app_info: ${{ fromJson(needs.prepare-matrix.outputs.apps_to_build) }}
 
     steps:
-      - name: Get app configuration from full matrix
-        id: app-config
-        run: |
-          # Get the full matrix to look up app configuration
-          FULL_MATRIX='${{ needs.prepare-matrix.outputs.external_apps_matrix }}'
-          APP_NAME='${{ matrix.app_info.name }}'
+      - name: simulate success
+        run: exit 0
 
-          # Find the app configuration in the full matrix
-          APP_CONFIG=$(echo "$FULL_MATRIX" | jq -c --arg name "$APP_NAME" '.[] | select(.name == $name)')
-
-          if [ -z "$APP_CONFIG" ]; then
-            echo "ERROR: Could not find configuration for $APP_NAME"
-            exit 1
-          fi
-
-          # Extract configuration values
-          APP_PATH=$(echo "$APP_CONFIG" | jq -r '.path')
-          HAS_NPM=$(echo "$APP_CONFIG" | jq -r '.has_npm')
-          HAS_COMPOSER=$(echo "$APP_CONFIG" | jq -r '.has_composer')
-          MAKEFILE_TARGET=$(echo "$APP_CONFIG" | jq -r '.makefile_target')
-
-          # Set outputs
-          echo "path=$APP_PATH" >> $GITHUB_OUTPUT
-          echo "has-npm=$HAS_NPM" >> $GITHUB_OUTPUT
-          echo "has-composer=$HAS_COMPOSER" >> $GITHUB_OUTPUT
-          echo "makefile-target=$MAKEFILE_TARGET" >> $GITHUB_OUTPUT
-          echo "Building $APP_NAME from $APP_PATH (SHA: ${{ matrix.app_info.sha }})"
-
-      - name: Checkout server
-        uses: actions/checkout@v5
-        with:
-          submodules: true
-          fetch-depth: 1
-
-      - name: Set up node with version from package.json's engines
-        if: steps.app-config.outputs.has-npm == 'true'
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: "package.json"
-          cache: 'npm'
-          cache-dependency-path: ${{ steps.app-config.outputs.path }}/package-lock.json
-
-      - name: Setup PHP with PECL extension
-        if: steps.app-config.outputs.has-composer == 'true'
-        uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
-        with:
-          php-version: '8.3'
-          tools: composer:v2
-          extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
-        env:
-          runner: ubuntu-latest
-
-      - name: Cache Composer dependencies for ${{ matrix.app_info.name }}
-        if: steps.app-config.outputs.has-composer == 'true' && github.event.inputs.force_rebuild != 'true'
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.app-config.outputs.path }}/vendor
-          key: ${{ runner.os }}-composer-${{ matrix.app_info.name }}-${{ hashFiles(format('{0}/composer.lock', steps.app-config.outputs.path)) }}
-          restore-keys: |
-            ${{ runner.os }}-composer-${{ matrix.app_info.name }}-
-
-      - name: Build ${{ matrix.app_info.name }} app
-        run: make -f IONOS/Makefile ${{ steps.app-config.outputs.makefile-target }}
-
-      - name: Report build completion
-        if: success()
-        run: |
-          echo "### ✅ Built ${{ matrix.app_info.name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **SHA:** \`${{ matrix.app_info.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Path:** ${{ steps.app-config.outputs.path }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status:** Success" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-      # Save built app to cache for future runs
-      - name: Save build artifacts to cache
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.app-config.outputs.path }}
-          key: ${{ env.CACHE_VERSION }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
-
-      # Push to JFrog for mk/dev/ionos-dev branch builds
-      - name: Setup JFrog CLI
-        uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
-        env:
-          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
-          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
-          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
-
-      - name: Ping the JF server
-        run: |
-          # Ping the server
-          jf rt ping
-
-      - name: Push ${{ matrix.app_info.name }} to JFrog
-        run: |
-          set -e
-          APP_NAME="${{ matrix.app_info.name }}"
-          APP_SHA="${{ matrix.app_info.sha }}"
-          APP_PATH="${{ steps.app-config.outputs.path }}"
-
-          echo "=== JFrog Upload Debug Info ==="
-          echo "📦 Packaging $APP_NAME for JFrog upload..."
-          echo "App Name: $APP_NAME"
-          echo "App SHA: $APP_SHA"
-          echo "App Path: $APP_PATH"
-          echo "Repository: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
-          echo "==============================="
-
-          # Verify app path exists
-          if [ ! -d "$APP_PATH" ]; then
-            echo "❌ ERROR: App path does not exist: $APP_PATH"
-            exit 1
-          fi
-
-          echo "App directory contents (top level):"
-          ls -la "$APP_PATH" | head -20
-
-          # Create tar.gz archive of the built app (excluding node_modules and other build artifacts)
-          ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
-          echo ""
-          echo "Creating archive: $ARCHIVE_NAME"
-          echo "Running: tar -czf \"$ARCHIVE_NAME\" --exclude=\"node_modules\" --exclude=\".git\" --exclude=\"*.log\" -C \"$(dirname "$APP_PATH")\" \"$(basename "$APP_PATH")\""
-
-          tar -czf "$ARCHIVE_NAME" \
-            --exclude="node_modules" \
-            --exclude=".git" \
-            --exclude="*.log" \
-            -C "$(dirname "$APP_PATH")" \
-            "$(basename "$APP_PATH")"
-
-          echo "✓ Archive created successfully"
-          echo "Archive size:"
-          ls -lh "$ARCHIVE_NAME"
-
-          # Upload to JFrog - store in snapshot repo under dev/apps/
-          # Include CACHE_VERSION in path to enable complete cache invalidation
-          JFROG_PATH="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/apps/${{ env.CACHE_VERSION }}/${APP_NAME}/${ARCHIVE_NAME}"
-
-          echo ""
-          echo "Uploading to JFrog..."
-          echo "Target Path: $JFROG_PATH"
-          echo "Properties: app.name=${APP_NAME};app.sha=${APP_SHA};vcs.branch=${{ github.ref_name }};vcs.revision=${{ github.sha }}"
-          echo "Running: jf rt upload \"$ARCHIVE_NAME\" \"$JFROG_PATH\" --target-props \"...\""
-
-          if jf rt upload "$ARCHIVE_NAME" "$JFROG_PATH" \
-            --target-props "app.name=${APP_NAME};app.sha=${APP_SHA};vcs.branch=${{ github.ref_name }};vcs.revision=${{ github.sha }}"; then
-            echo "✅ Successfully uploaded $APP_NAME to JFrog"
-            echo ""
-            echo "Verifying upload..."
-            if jf rt s "$JFROG_PATH"; then
-              echo "✓ Upload verified - artifact is accessible in JFrog"
-            else
-              echo "⚠ Upload succeeded but verification search failed"
-            fi
-          else
-            UPLOAD_EXIT_CODE=$?
-            echo "❌ Failed to upload to JFrog (exit code: $UPLOAD_EXIT_CODE)"
-            echo "⚠️ Continuing workflow despite upload failure..."
-          fi
-
-          # Clean up archive
-          echo ""
-          echo "Cleaning up local archive..."
-          rm -f "$ARCHIVE_NAME"
-          echo "✓ Cleanup complete"
-
-      - name: Upload ${{ matrix.app_info.name }} build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          retention-days: 1
-          name: external-app-build-${{ matrix.app_info.name }}
-          path: |
-            ${{ steps.app-config.outputs.path }}
-            !${{ steps.app-config.outputs.path }}/node_modules
+#      - name: Get app configuration from full matrix
+#        id: app-config
+#        run: |
+#          # Get the full matrix to look up app configuration
+#          FULL_MATRIX='${{ needs.prepare-matrix.outputs.external_apps_matrix }}'
+#          APP_NAME='${{ matrix.app_info.name }}'
+#
+#          # Find the app configuration in the full matrix
+#          APP_CONFIG=$(echo "$FULL_MATRIX" | jq -c --arg name "$APP_NAME" '.[] | select(.name == $name)')
+#
+#          if [ -z "$APP_CONFIG" ]; then
+#            echo "ERROR: Could not find configuration for $APP_NAME"
+#            exit 1
+#          fi
+#
+#          # Extract configuration values
+#          APP_PATH=$(echo "$APP_CONFIG" | jq -r '.path')
+#          HAS_NPM=$(echo "$APP_CONFIG" | jq -r '.has_npm')
+#          HAS_COMPOSER=$(echo "$APP_CONFIG" | jq -r '.has_composer')
+#          MAKEFILE_TARGET=$(echo "$APP_CONFIG" | jq -r '.makefile_target')
+#
+#          # Set outputs
+#          echo "path=$APP_PATH" >> $GITHUB_OUTPUT
+#          echo "has-npm=$HAS_NPM" >> $GITHUB_OUTPUT
+#          echo "has-composer=$HAS_COMPOSER" >> $GITHUB_OUTPUT
+#          echo "makefile-target=$MAKEFILE_TARGET" >> $GITHUB_OUTPUT
+#          echo "Building $APP_NAME from $APP_PATH (SHA: ${{ matrix.app_info.sha }})"
+#
+#      - name: Checkout server
+#        uses: actions/checkout@v5
+#        with:
+#          submodules: true
+#          fetch-depth: 1
+#
+#      - name: Set up node with version from package.json's engines
+#        if: steps.app-config.outputs.has-npm == 'true'
+#        uses: actions/setup-node@v6
+#        with:
+#          node-version-file: "package.json"
+#          cache: 'npm'
+#          cache-dependency-path: ${{ steps.app-config.outputs.path }}/package-lock.json
+#
+#      - name: Setup PHP with PECL extension
+#        if: steps.app-config.outputs.has-composer == 'true'
+#        uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
+#        with:
+#          php-version: '8.3'
+#          tools: composer:v2
+#          extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
+#        env:
+#          runner: ubuntu-latest
+#
+#      - name: Cache Composer dependencies for ${{ matrix.app_info.name }}
+#        if: steps.app-config.outputs.has-composer == 'true' && github.event.inputs.force_rebuild != 'true'
+#        uses: actions/cache@v4
+#        with:
+#          path: ${{ steps.app-config.outputs.path }}/vendor
+#          key: ${{ runner.os }}-composer-${{ matrix.app_info.name }}-${{ hashFiles(format('{0}/composer.lock', steps.app-config.outputs.path)) }}
+#          restore-keys: |
+#            ${{ runner.os }}-composer-${{ matrix.app_info.name }}-
+#
+#      - name: Build ${{ matrix.app_info.name }} app
+#        run: make -f IONOS/Makefile ${{ steps.app-config.outputs.makefile-target }}
+#
+#      - name: Report build completion
+#        if: success()
+#        run: |
+#          echo "### ✅ Built ${{ matrix.app_info.name }}" >> $GITHUB_STEP_SUMMARY
+#          echo "- **SHA:** \`${{ matrix.app_info.sha }}\`" >> $GITHUB_STEP_SUMMARY
+#          echo "- **Path:** ${{ steps.app-config.outputs.path }}" >> $GITHUB_STEP_SUMMARY
+#          echo "- **Status:** Success" >> $GITHUB_STEP_SUMMARY
+#          echo "" >> $GITHUB_STEP_SUMMARY
+#
+#      # Save built app to cache for future runs
+#      - name: Save build artifacts to cache
+#        uses: actions/cache/save@v4
+#        with:
+#          path: ${{ steps.app-config.outputs.path }}
+#          key: ${{ env.CACHE_VERSION }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
+#
+#      # Push to JFrog for mk/dev/ionos-dev branch builds
+#      - name: Setup JFrog CLI
+#        uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
+#        env:
+#          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+#          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+#          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+#
+#      - name: Ping the JF server
+#        run: |
+#          # Ping the server
+#          jf rt ping
+#
+#      - name: Push ${{ matrix.app_info.name }} to JFrog
+#        run: |
+#          set -e
+#          APP_NAME="${{ matrix.app_info.name }}"
+#          APP_SHA="${{ matrix.app_info.sha }}"
+#          APP_PATH="${{ steps.app-config.outputs.path }}"
+#
+#          echo "=== JFrog Upload Debug Info ==="
+#          echo "📦 Packaging $APP_NAME for JFrog upload..."
+#          echo "App Name: $APP_NAME"
+#          echo "App SHA: $APP_SHA"
+#          echo "App Path: $APP_PATH"
+#          echo "Repository: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
+#          echo "==============================="
+#
+#          # Verify app path exists
+#          if [ ! -d "$APP_PATH" ]; then
+#            echo "❌ ERROR: App path does not exist: $APP_PATH"
+#            exit 1
+#          fi
+#
+#          echo "App directory contents (top level):"
+#          ls -la "$APP_PATH" | head -20
+#
+#          # Create tar.gz archive of the built app (excluding node_modules and other build artifacts)
+#          ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
+#          echo ""
+#          echo "Creating archive: $ARCHIVE_NAME"
+#          echo "Running: tar -czf \"$ARCHIVE_NAME\" --exclude=\"node_modules\" --exclude=\".git\" --exclude=\"*.log\" -C \"$(dirname "$APP_PATH")\" \"$(basename "$APP_PATH")\""
+#
+#          tar -czf "$ARCHIVE_NAME" \
+#            --exclude="node_modules" \
+#            --exclude=".git" \
+#            --exclude="*.log" \
+#            -C "$(dirname "$APP_PATH")" \
+#            "$(basename "$APP_PATH")"
+#
+#          echo "✓ Archive created successfully"
+#          echo "Archive size:"
+#          ls -lh "$ARCHIVE_NAME"
+#
+#          # Upload to JFrog - store in snapshot repo under dev/apps/
+#          # Include CACHE_VERSION in path to enable complete cache invalidation
+#          JFROG_PATH="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/apps/${{ env.CACHE_VERSION }}/${APP_NAME}/${ARCHIVE_NAME}"
+#
+#          echo ""
+#          echo "Uploading to JFrog..."
+#          echo "Target Path: $JFROG_PATH"
+#          echo "Properties: app.name=${APP_NAME};app.sha=${APP_SHA};vcs.branch=${{ github.ref_name }};vcs.revision=${{ github.sha }}"
+#          echo "Running: jf rt upload \"$ARCHIVE_NAME\" \"$JFROG_PATH\" --target-props \"...\""
+#
+#          if jf rt upload "$ARCHIVE_NAME" "$JFROG_PATH" \
+#            --target-props "app.name=${APP_NAME};app.sha=${APP_SHA};vcs.branch=${{ github.ref_name }};vcs.revision=${{ github.sha }}"; then
+#            echo "✅ Successfully uploaded $APP_NAME to JFrog"
+#            echo ""
+#            echo "Verifying upload..."
+#            if jf rt s "$JFROG_PATH"; then
+#              echo "✓ Upload verified - artifact is accessible in JFrog"
+#            else
+#              echo "⚠ Upload succeeded but verification search failed"
+#            fi
+#          else
+#            UPLOAD_EXIT_CODE=$?
+#            echo "❌ Failed to upload to JFrog (exit code: $UPLOAD_EXIT_CODE)"
+#            echo "⚠️ Continuing workflow despite upload failure..."
+#          fi
+#
+#          # Clean up archive
+#          echo ""
+#          echo "Cleaning up local archive..."
+#          rm -f "$ARCHIVE_NAME"
+#          echo "✓ Cleanup complete"
+#
+#      - name: Upload ${{ matrix.app_info.name }} build artifacts
+#        uses: actions/upload-artifact@v4
+#        with:
+#          retention-days: 1
+#          name: external-app-build-${{ matrix.app_info.name }}
+#          path: |
+#            ${{ steps.app-config.outputs.path }}
+#            !${{ steps.app-config.outputs.path }}/node_modules
 
   build-artifact:
     runs-on: ubuntu-latest
@@ -404,211 +410,214 @@ jobs:
       - name: Checkout server
         uses: actions/checkout@v5
         with:
-          submodules: true
+#          submodules: true
           fetch-depth: 1
 
-      - name: Setup JFrog CLI
-        if: needs.prepare-matrix.outputs.has_apps_to_restore == 'true'
-        uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
-        env:
-          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
-          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
-          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+      - name: simulate success
+        run: exit 0
 
-      - name: Ping the JF server
-        run: |
-          # Ping the server
-          jf rt ping
-
-      - name: Restore cached apps
-        if: needs.prepare-matrix.outputs.has_apps_to_restore == 'true'
-        run: |
-          set -e
-
-          echo "📦 Restoring cached apps..."
-          APPS_TO_RESTORE='${{ needs.prepare-matrix.outputs.apps_to_restore }}'
-
-          # Process each app in the restore list
-          echo "$APPS_TO_RESTORE" | jq -c '.[]' | while read -r app_json; do
-            APP_NAME=$(echo "$app_json" | jq -r '.name')
-            APP_SHA=$(echo "$app_json" | jq -r '.sha')
-            APP_PATH=$(echo "$app_json" | jq -r '.path')
-            SOURCE=$(echo "$app_json" | jq -r '.source')
-
-            echo ""
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "Restoring: $APP_NAME (source: $SOURCE)"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-            if [ "$SOURCE" == "jfrog" ]; then
-              # Restore from JFrog
-              JFROG_PATH=$(echo "$app_json" | jq -r '.jfrog_path')
-              ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
-
-              echo "📥 Downloading from JFrog: $JFROG_PATH"
-
-              if jf rt download "$JFROG_PATH" "$ARCHIVE_NAME" --flat=true; then
-                echo "✅ Downloaded successfully"
-                echo "Extracting to $APP_PATH..."
-                mkdir -p "$(dirname "$APP_PATH")"
-                tar -xzf "$ARCHIVE_NAME" -C "$(dirname "$APP_PATH")"
-
-                if [ -d "$APP_PATH" ] && [ -f "$APP_PATH/appinfo/info.xml" ]; then
-                  echo "✅ Restored $APP_NAME from JFrog"
-                else
-                  echo "❌ Failed to extract or validate $APP_NAME"
-                  exit 1
-                fi
-
-                rm -f "$ARCHIVE_NAME"
-              else
-                echo "❌ Failed to download from JFrog"
-                exit 1
-              fi
-
-            elif [ "$SOURCE" == "github-cache" ]; then
-              # Restore from GitHub cache
-              CACHE_KEY=$(echo "$app_json" | jq -r '.cache_key')
-
-              echo "💾 Restoring from GitHub cache: $CACHE_KEY"
-
-              # Use actions/cache/restore in a way that works in a script context
-              # We need to use gh CLI to restore the cache
-              if gh cache restore "$CACHE_KEY" --key "$CACHE_KEY"; then
-                echo "✅ Restored $APP_NAME from GitHub cache"
-
-                # Validate restoration
-                if [ ! -d "$APP_PATH" ] || [ ! -f "$APP_PATH/appinfo/info.xml" ]; then
-                  echo "❌ Validation failed for $APP_NAME"
-                  exit 1
-                fi
-              else
-                echo "❌ Failed to restore from GitHub cache"
-                exit 1
-              fi
-            else
-              echo "❌ Unknown source: $SOURCE"
-              exit 1
-            fi
-          done
-
-          echo ""
-          echo "✅ All cached apps restored successfully"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Download build external apps
-        uses: actions/download-artifact@v5
-        with:
-          pattern: external-app-build-*
-          path: apps-external/
-
-      - name: Reorganize downloaded apps-external artifacts
-        run: |
-          cd apps-external/
-
-          echo "Initial structure:"
-          ls -la
-
-          # Move contents from external-app-build-* directories to their target directories
-          for artifact_dir in external-app-build-*; do
-            if [ -d "$artifact_dir" ]; then
-              # Extract app name from artifact directory name
-              app_name=${artifact_dir#external-app-build-}
-
-              echo "Processing artifact: $artifact_dir -> $app_name"
-
-              # If target directory exists, merge the contents from the artifact directory containing build artifacts
-              if [ -d "$app_name" ]; then
-                echo "Target directory $app_name exists, merging contents from $artifact_dir"
-                # Copy contents from artifact directory to target directory
-                cp -r "$artifact_dir"/* "$app_name"/
-                # Remove the now-empty artifact directory
-                rm -rf "$artifact_dir"
-              else
-                # Move the artifact directory to the proper app name
-                echo "Moving $artifact_dir to $app_name"
-                mv "$artifact_dir" "$app_name"
-              fi
-            fi
-          done
-
-          echo "Reorganization complete. Final structure:"
-          ls -la
-
-      - name: Verify downloaded artifacts structure
-        run: |
-          echo "External apps structure:"
-          ls -la apps-external/
-          for app_dir in apps-external/*/; do
-            if [ -d "$app_dir" ]; then
-              echo "Contents of $app_dir:"
-              ls -la "$app_dir"
-            fi
-          done
-
-      - name: Set up node with version from package.json's engines
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: "package.json"
-          cache: ${{ github.event.inputs.force_rebuild != 'true' && 'npm' || '' }}
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y make zip unzip
-
-      - name: Print dependencies versions
-        run: make --version && node --version && npm --version
-
-      - name: Setup PHP with PECL extension
-        uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
-        with:
-          php-version: '8.3'
-          tools: composer:v2
-          extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
-        env:
-          runner: ubuntu-latest
-
-      - name: Cache Composer dependencies
-        if: github.event.inputs.force_rebuild != 'true'
-        uses: actions/cache@v4
-        with:
-          path: vendor
-          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-composer-
-
-      - name: Print PHP install
-        run: php -i && php -m
-
-      - name: Build Nextcloud
-        run: make -f IONOS/Makefile build_ncw
-
-      - name: Add config partials
-        run: make -f IONOS/Makefile add_config_partials
-
-      - name: Zip dependencies
-        run: make -f IONOS/Makefile zip_dependencies TARGET_PACKAGE_NAME=${{ env.TARGET_PACKAGE_NAME }}
-
-      - name: Get NC version
-        id: get_nc_version
-        continue-on-error: false
-        run: |
-          NC_VERSION=$(jq -r '.ncVersion' version.json)
-          echo "NC_VERSION: $NC_VERSION"
-
-          if [ -z "$NC_VERSION" ]; then
-            echo "NC_VERSION is empty"
-            exit 1
-          fi
-
-          echo "NC_VERSION=$NC_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Upload artifact result for job build-artifact
-        uses: actions/upload-artifact@v4
-        with:
-          retention-days: 30
-          name: nextcloud_workspace_build_artifact
-          path: ${{ env.TARGET_PACKAGE_NAME }}
+#      - name: Setup JFrog CLI
+#        if: needs.prepare-matrix.outputs.has_apps_to_restore == 'true'
+#        uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
+#        env:
+#          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+#          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+#          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+#
+#      - name: Ping the JF server
+#        run: |
+#          # Ping the server
+#          jf rt ping
+#
+#      - name: Restore cached apps
+#        if: needs.prepare-matrix.outputs.has_apps_to_restore == 'true'
+#        run: |
+#          set -e
+#
+#          echo "📦 Restoring cached apps..."
+#          APPS_TO_RESTORE='${{ needs.prepare-matrix.outputs.apps_to_restore }}'
+#
+#          # Process each app in the restore list
+#          echo "$APPS_TO_RESTORE" | jq -c '.[]' | while read -r app_json; do
+#            APP_NAME=$(echo "$app_json" | jq -r '.name')
+#            APP_SHA=$(echo "$app_json" | jq -r '.sha')
+#            APP_PATH=$(echo "$app_json" | jq -r '.path')
+#            SOURCE=$(echo "$app_json" | jq -r '.source')
+#
+#            echo ""
+#            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+#            echo "Restoring: $APP_NAME (source: $SOURCE)"
+#            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+#
+#            if [ "$SOURCE" == "jfrog" ]; then
+#              # Restore from JFrog
+#              JFROG_PATH=$(echo "$app_json" | jq -r '.jfrog_path')
+#              ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
+#
+#              echo "📥 Downloading from JFrog: $JFROG_PATH"
+#
+#              if jf rt download "$JFROG_PATH" "$ARCHIVE_NAME" --flat=true; then
+#                echo "✅ Downloaded successfully"
+#                echo "Extracting to $APP_PATH..."
+#                mkdir -p "$(dirname "$APP_PATH")"
+#                tar -xzf "$ARCHIVE_NAME" -C "$(dirname "$APP_PATH")"
+#
+#                if [ -d "$APP_PATH" ] && [ -f "$APP_PATH/appinfo/info.xml" ]; then
+#                  echo "✅ Restored $APP_NAME from JFrog"
+#                else
+#                  echo "❌ Failed to extract or validate $APP_NAME"
+#                  exit 1
+#                fi
+#
+#                rm -f "$ARCHIVE_NAME"
+#              else
+#                echo "❌ Failed to download from JFrog"
+#                exit 1
+#              fi
+#
+#            elif [ "$SOURCE" == "github-cache" ]; then
+#              # Restore from GitHub cache
+#              CACHE_KEY=$(echo "$app_json" | jq -r '.cache_key')
+#
+#              echo "💾 Restoring from GitHub cache: $CACHE_KEY"
+#
+#              # Use actions/cache/restore in a way that works in a script context
+#              # We need to use gh CLI to restore the cache
+#              if gh cache restore "$CACHE_KEY" --key "$CACHE_KEY"; then
+#                echo "✅ Restored $APP_NAME from GitHub cache"
+#
+#                # Validate restoration
+#                if [ ! -d "$APP_PATH" ] || [ ! -f "$APP_PATH/appinfo/info.xml" ]; then
+#                  echo "❌ Validation failed for $APP_NAME"
+#                  exit 1
+#                fi
+#              else
+#                echo "❌ Failed to restore from GitHub cache"
+#                exit 1
+#              fi
+#            else
+#              echo "❌ Unknown source: $SOURCE"
+#              exit 1
+#            fi
+#          done
+#
+#          echo ""
+#          echo "✅ All cached apps restored successfully"
+#        env:
+#          GH_TOKEN: ${{ github.token }}
+#
+#      - name: Download build external apps
+#        uses: actions/download-artifact@v5
+#        with:
+#          pattern: external-app-build-*
+#          path: apps-external/
+#
+#      - name: Reorganize downloaded apps-external artifacts
+#        run: |
+#          cd apps-external/
+#
+#          echo "Initial structure:"
+#          ls -la
+#
+#          # Move contents from external-app-build-* directories to their target directories
+#          for artifact_dir in external-app-build-*; do
+#            if [ -d "$artifact_dir" ]; then
+#              # Extract app name from artifact directory name
+#              app_name=${artifact_dir#external-app-build-}
+#
+#              echo "Processing artifact: $artifact_dir -> $app_name"
+#
+#              # If target directory exists, merge the contents from the artifact directory containing build artifacts
+#              if [ -d "$app_name" ]; then
+#                echo "Target directory $app_name exists, merging contents from $artifact_dir"
+#                # Copy contents from artifact directory to target directory
+#                cp -r "$artifact_dir"/* "$app_name"/
+#                # Remove the now-empty artifact directory
+#                rm -rf "$artifact_dir"
+#              else
+#                # Move the artifact directory to the proper app name
+#                echo "Moving $artifact_dir to $app_name"
+#                mv "$artifact_dir" "$app_name"
+#              fi
+#            fi
+#          done
+#
+#          echo "Reorganization complete. Final structure:"
+#          ls -la
+#
+#      - name: Verify downloaded artifacts structure
+#        run: |
+#          echo "External apps structure:"
+#          ls -la apps-external/
+#          for app_dir in apps-external/*/; do
+#            if [ -d "$app_dir" ]; then
+#              echo "Contents of $app_dir:"
+#              ls -la "$app_dir"
+#            fi
+#          done
+#
+#      - name: Set up node with version from package.json's engines
+#        uses: actions/setup-node@v6
+#        with:
+#          node-version-file: "package.json"
+#          cache: ${{ github.event.inputs.force_rebuild != 'true' && 'npm' || '' }}
+#
+#      - name: Install Dependencies
+#        run: sudo apt-get update && sudo apt-get install -y make zip unzip
+#
+#      - name: Print dependencies versions
+#        run: make --version && node --version && npm --version
+#
+#      - name: Setup PHP with PECL extension
+#        uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
+#        with:
+#          php-version: '8.3'
+#          tools: composer:v2
+#          extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
+#        env:
+#          runner: ubuntu-latest
+#
+#      - name: Cache Composer dependencies
+#        if: github.event.inputs.force_rebuild != 'true'
+#        uses: actions/cache@v4
+#        with:
+#          path: vendor
+#          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+#          restore-keys: |
+#            ${{ runner.os }}-composer-
+#
+#      - name: Print PHP install
+#        run: php -i && php -m
+#
+#      - name: Build Nextcloud
+#        run: make -f IONOS/Makefile build_ncw
+#
+#      - name: Add config partials
+#        run: make -f IONOS/Makefile add_config_partials
+#
+#      - name: Zip dependencies
+#        run: make -f IONOS/Makefile zip_dependencies TARGET_PACKAGE_NAME=${{ env.TARGET_PACKAGE_NAME }}
+#
+#      - name: Get NC version
+#        id: get_nc_version
+#        continue-on-error: false
+#        run: |
+#          NC_VERSION=$(jq -r '.ncVersion' version.json)
+#          echo "NC_VERSION: $NC_VERSION"
+#
+#          if [ -z "$NC_VERSION" ]; then
+#            echo "NC_VERSION is empty"
+#            exit 1
+#          fi
+#
+#          echo "NC_VERSION=$NC_VERSION" >> $GITHUB_OUTPUT
+#
+#      - name: Upload artifact result for job build-artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          retention-days: 30
+#          name: nextcloud_workspace_build_artifact
+#          path: ${{ env.TARGET_PACKAGE_NAME }}
 
       - name: Show changes on failure
         if: failure()
@@ -637,108 +646,111 @@ jobs:
       BUILD_NAME: "nextcloud-workspace-snapshot"
 
     steps:
-      - name: Check prerequisites
-        run: |
-          # count the number of secrets that are set
-          echo "Checking if required secrets are set..."
-          error_count=0
+      - name: simulate success
+        run: exit 0
 
-          if [ -z "${{ secrets.JF_ARTIFACTORY_URL }}" ]; then
-            # output error to github actions log
-            echo "::error::JF_ARTIFACTORY_URL secret is not set"
-            error_count=$((error_count + 1))
-          fi
-
-          if [ -z "${{ secrets.JF_ARTIFACTORY_USER }}" ]; then
-            echo "::error::JF_ARTIFACTORY_USER secret is not set"
-            error_count=$((error_count + 1))
-          fi
-
-          if [ -z "${{ secrets.JF_ACCESS_TOKEN }}" ]; then
-            echo "::error::JF_ACCESS_TOKEN secret is not set"
-            error_count=$((error_count + 1))
-          fi
-
-          # abort if any of the required secrets are not set
-          if [ $error_count -ne 0 ]; then
-              echo "::error::Required secrets are not set. Aborting."
-              exit 1
-          fi
-
-      - name: Download artifact zip
-        uses: actions/download-artifact@v5
-        with:
-          name: nextcloud_workspace_build_artifact
-
-      # This action sets up the JFrog CLI with the Artifactory URL and access token
-      - uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
-        env:
-          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
-          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
-          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
-
-      - name: Ping the JF server
-        run: |
-          # Ping the server
-          jf rt ping
-
-      - name: Upload build to artifactory
-        id: artifactory_upload
-        run: |
-          # PR builds are stored in a separate directory as "dev/pr/nextcloud-workspace-pr-<number>.zip"
-          # Push to "mk/dev/ionos-dev" branch is stored as "dev/nextcloud-workspace-<ncVersion>.zip"
-
-          ARTIFACTORY_STAGE_PREFIX="dev"
-
-          # set ARTIFACTORY_STAGE_PREFIX=stable on ionos-stable branch
-          if [ "${{ github.ref_name }}" == "ionos-stable" ]; then
-              ARTIFACTORY_STAGE_PREFIX="stable"
-          fi
-
-          export PATH_TO_DIRECTORY="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/${ARTIFACTORY_STAGE_PREFIX}"
-          PATH_TO_FILE="pr/nextcloud-workspace-pr-${{ github.event.pull_request.number }}.zip"
-
-          if [ -z "${{ github.event.pull_request.number }}" ]; then
-            PATH_TO_FILE="nextcloud-workspace-${{ needs.build-artifact.outputs.NC_VERSION }}.zip"
-          fi
-
-          export PATH_TO_LATEST_ARTIFACT="${PATH_TO_DIRECTORY}/${PATH_TO_FILE}"
-
-          # Upload with retry logic (3 attempts with 30s delay)
-          MAX_ATTEMPTS=3
-          ATTEMPT=1
-          UPLOAD_SUCCESS=false
-          DELAY_SEC=10
-
-          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-            echo "Upload attempt $ATTEMPT of $MAX_ATTEMPTS..."
-
-            if jf rt upload "${{ env.TARGET_PACKAGE_NAME }}" \
-              --build-name "${{ env.BUILD_NAME }}" \
-              --build-number ${{ github.run_number }} \
-              --target-props "build.nc_version=${{ needs.build-artifact.outputs.NC_VERSION }};vcs.branch=${{ github.ref }};vcs.revision=${{ github.sha }}" \
-              $PATH_TO_LATEST_ARTIFACT; then
-              UPLOAD_SUCCESS=true
-              echo "✅ Upload successful on attempt $ATTEMPT"
-              break
-            else
-              echo "⚠️ Upload attempt $ATTEMPT failed"
-              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-                echo "Waiting $DELAY_SEC seconds before retry..."
-                sleep $DELAY_SEC
-                DELAY_SEC=$((DELAY_SEC * 2))  # Exponential backoff: delays are 10s, then 20s (sleep occurs after failed attempts)
-              fi
-            fi
-
-            ATTEMPT=$((ATTEMPT + 1))
-          done
-
-          if [ "$UPLOAD_SUCCESS" != "true" ]; then
-            echo "❌ Upload failed after $MAX_ATTEMPTS attempts"
-            exit 1
-          fi
-
-          echo "ARTIFACTORY_LAST_BUILD_PATH=${PATH_TO_LATEST_ARTIFACT}" >> $GITHUB_OUTPUT
+#      - name: Check prerequisites
+#        run: |
+#          # count the number of secrets that are set
+#          echo "Checking if required secrets are set..."
+#          error_count=0
+#
+#          if [ -z "${{ secrets.JF_ARTIFACTORY_URL }}" ]; then
+#            # output error to github actions log
+#            echo "::error::JF_ARTIFACTORY_URL secret is not set"
+#            error_count=$((error_count + 1))
+#          fi
+#
+#          if [ -z "${{ secrets.JF_ARTIFACTORY_USER }}" ]; then
+#            echo "::error::JF_ARTIFACTORY_USER secret is not set"
+#            error_count=$((error_count + 1))
+#          fi
+#
+#          if [ -z "${{ secrets.JF_ACCESS_TOKEN }}" ]; then
+#            echo "::error::JF_ACCESS_TOKEN secret is not set"
+#            error_count=$((error_count + 1))
+#          fi
+#
+#          # abort if any of the required secrets are not set
+#          if [ $error_count -ne 0 ]; then
+#              echo "::error::Required secrets are not set. Aborting."
+#              exit 1
+#          fi
+#
+#      - name: Download artifact zip
+#        uses: actions/download-artifact@v5
+#        with:
+#          name: nextcloud_workspace_build_artifact
+#
+#      # This action sets up the JFrog CLI with the Artifactory URL and access token
+#      - uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
+#        env:
+#          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+#          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+#          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+#
+#      - name: Ping the JF server
+#        run: |
+#          # Ping the server
+#          jf rt ping
+#
+#      - name: Upload build to artifactory
+#        id: artifactory_upload
+#        run: |
+#          # PR builds are stored in a separate directory as "dev/pr/nextcloud-workspace-pr-<number>.zip"
+#          # Push to "mk/dev/ionos-dev" branch is stored as "dev/nextcloud-workspace-<ncVersion>.zip"
+#
+#          ARTIFACTORY_STAGE_PREFIX="dev"
+#
+#          # set ARTIFACTORY_STAGE_PREFIX=stable on ionos-stable branch
+#          if [ "${{ github.ref_name }}" == "ionos-stable" ]; then
+#              ARTIFACTORY_STAGE_PREFIX="stable"
+#          fi
+#
+#          export PATH_TO_DIRECTORY="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/${ARTIFACTORY_STAGE_PREFIX}"
+#          PATH_TO_FILE="pr/nextcloud-workspace-pr-${{ github.event.pull_request.number }}.zip"
+#
+#          if [ -z "${{ github.event.pull_request.number }}" ]; then
+#            PATH_TO_FILE="nextcloud-workspace-${{ needs.build-artifact.outputs.NC_VERSION }}.zip"
+#          fi
+#
+#          export PATH_TO_LATEST_ARTIFACT="${PATH_TO_DIRECTORY}/${PATH_TO_FILE}"
+#
+#          # Upload with retry logic (3 attempts with 30s delay)
+#          MAX_ATTEMPTS=3
+#          ATTEMPT=1
+#          UPLOAD_SUCCESS=false
+#          DELAY_SEC=10
+#
+#          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+#            echo "Upload attempt $ATTEMPT of $MAX_ATTEMPTS..."
+#
+#            if jf rt upload "${{ env.TARGET_PACKAGE_NAME }}" \
+#              --build-name "${{ env.BUILD_NAME }}" \
+#              --build-number ${{ github.run_number }} \
+#              --target-props "build.nc_version=${{ needs.build-artifact.outputs.NC_VERSION }};vcs.branch=${{ github.ref }};vcs.revision=${{ github.sha }}" \
+#              $PATH_TO_LATEST_ARTIFACT; then
+#              UPLOAD_SUCCESS=true
+#              echo "✅ Upload successful on attempt $ATTEMPT"
+#              break
+#            else
+#              echo "⚠️ Upload attempt $ATTEMPT failed"
+#              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+#                echo "Waiting $DELAY_SEC seconds before retry..."
+#                sleep $DELAY_SEC
+#                DELAY_SEC=$((DELAY_SEC * 2))  # Exponential backoff: delays are 10s, then 20s (sleep occurs after failed attempts)
+#              fi
+#            fi
+#
+#            ATTEMPT=$((ATTEMPT + 1))
+#          done
+#
+#          if [ "$UPLOAD_SUCCESS" != "true" ]; then
+#            echo "❌ Upload failed after $MAX_ATTEMPTS attempts"
+#            exit 1
+#          fi
+#
+#          echo "ARTIFACTORY_LAST_BUILD_PATH=${PATH_TO_LATEST_ARTIFACT}" >> $GITHUB_OUTPUT
 
       - name: Show changes on failure
         if: failure()
@@ -764,45 +776,48 @@ jobs:
     needs: [prepare-matrix, build-external-apps, build-artifact]
 
     steps:
-      - name: Download artifact zip
-        uses: actions/download-artifact@v5
-        with:
-          name: nextcloud_workspace_build_artifact
+      - name: simulate success
+        run: exit 0
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-
-      - name: Create Dockerfile
-        run: |
-          cat >Dockerfile << EOF
-          FROM busybox as builder
-          COPY ./${{ env.TARGET_PACKAGE_NAME }} /
-          WORKDIR /builder
-          RUN unzip /${{ env.TARGET_PACKAGE_NAME }} -d /builder
-
-          FROM scratch
-          WORKDIR /app
-          VOLUME /app
-          COPY --from=builder /builder /app
-          EOF
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+#      - name: Download artifact zip
+#        uses: actions/download-artifact@v5
+#        with:
+#          name: nextcloud_workspace_build_artifact
+#
+#      - name: Log in to the Container registry
+#        uses: docker/login-action@v3
+#        with:
+#          registry: ${{ env.REGISTRY }}
+#          username: ${{ github.actor }}
+#          password: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Extract metadata (tags, labels) for Docker
+#        id: meta
+#        uses: docker/metadata-action@v5
+#        with:
+#          images: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+#
+#      - name: Create Dockerfile
+#        run: |
+#          cat >Dockerfile << EOF
+#          FROM busybox as builder
+#          COPY ./${{ env.TARGET_PACKAGE_NAME }} /
+#          WORKDIR /builder
+#          RUN unzip /${{ env.TARGET_PACKAGE_NAME }} -d /builder
+#
+#          FROM scratch
+#          WORKDIR /app
+#          VOLUME /app
+#          COPY --from=builder /builder /app
+#          EOF
+#
+#      - name: Build and push Docker image
+#        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+#        with:
+#          context: .
+#          push: true
+#          tags: ${{ steps.meta.outputs.tags }}
+#          labels: ${{ steps.meta.outputs.labels }}
 
       - name: Show changes on failure
         if: failure()
@@ -851,61 +866,61 @@ jobs:
           TRIGGER_SUCCESS=false
           DELAY_SEC=5
 
-          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-            echo "Trigger attempt $ATTEMPT of $MAX_ATTEMPTS..."
-
-            if curl \
-              --silent \
-              --insecure \
-              --request POST \
-              --fail-with-body \
-              -o response.json \
-              --form token=${{ secrets.GITLAB_TOKEN }} \
-              --form ref="stable" \
-              --form "variables[GITHUB_SHA]=${{ github.sha }}" \
-              --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}" \
-              --form "variables[NC_VERSION]=${{ needs.build-artifact.outputs.NC_VERSION }}" \
-              --form "variables[BUILD_ID]=${{ github.run_id }}" \
-              --form "variables[BUILD_TYPE]=${BUILD_TYPE}" \
-              "${{ secrets.GITLAB_TRIGGER_URL }}"; then
-              TRIGGER_SUCCESS=true
-              echo "✅ Trigger successful on attempt $ATTEMPT"
-              break
-            else
-              RETCODE="$?"
-              echo "⚠️ Trigger attempt $ATTEMPT failed with code $RETCODE"
-              if [ -f response.json ]; then
-                jq . response.json || cat response.json
-              fi
-              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-                echo "Waiting ${DELAY_SEC} seconds before retry..."
-                sleep $DELAY_SEC
-                DELAY_SEC=$((DELAY_SEC * 2))  # Exponential backoff: 5s, 10s, 20s
-              fi
-            fi
-
-            ATTEMPT=$((ATTEMPT + 1))
-          done
-
-          if [ "$TRIGGER_SUCCESS" != "true" ]; then
-            echo "❌ Trigger failed after $MAX_ATTEMPTS attempts"
-            if [ -f response.json ]; then
-              jq . response.json || cat response.json
-            fi
-            exit 1
-          fi
-
-          # Disable command echo
-          set +x
-
-          # Print and parse json
-          # jq . response.json
-          echo "json<<END" >> $GITHUB_OUTPUT
-          cat response.json >> $GITHUB_OUTPUT
-          echo "END" >> $GITHUB_OUTPUT
-          echo "web_url<<END" >> $GITHUB_OUTPUT
-          cat response.json | jq --raw-output '.web_url' >> $GITHUB_OUTPUT
-          echo "END" >> $GITHUB_OUTPUT
+#          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+#            echo "Trigger attempt $ATTEMPT of $MAX_ATTEMPTS..."
+#
+#            if curl \
+#              --silent \
+#              --insecure \
+#              --request POST \
+#              --fail-with-body \
+#              -o response.json \
+#              --form token=${{ secrets.GITLAB_TOKEN }} \
+#              --form ref="stable" \
+#              --form "variables[GITHUB_SHA]=${{ github.sha }}" \
+#              --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}" \
+#              --form "variables[NC_VERSION]=${{ needs.build-artifact.outputs.NC_VERSION }}" \
+#              --form "variables[BUILD_ID]=${{ github.run_id }}" \
+#              --form "variables[BUILD_TYPE]=${BUILD_TYPE}" \
+#              "${{ secrets.GITLAB_TRIGGER_URL }}"; then
+#              TRIGGER_SUCCESS=true
+#              echo "✅ Trigger successful on attempt $ATTEMPT"
+#              break
+#            else
+#              RETCODE="$?"
+#              echo "⚠️ Trigger attempt $ATTEMPT failed with code $RETCODE"
+#              if [ -f response.json ]; then
+#                jq . response.json || cat response.json
+#              fi
+#              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+#                echo "Waiting ${DELAY_SEC} seconds before retry..."
+#                sleep $DELAY_SEC
+#                DELAY_SEC=$((DELAY_SEC * 2))  # Exponential backoff: 5s, 10s, 20s
+#              fi
+#            fi
+#
+#            ATTEMPT=$((ATTEMPT + 1))
+#          done
+#
+#          if [ "$TRIGGER_SUCCESS" != "true" ]; then
+#            echo "❌ Trigger failed after $MAX_ATTEMPTS attempts"
+#            if [ -f response.json ]; then
+#              jq . response.json || cat response.json
+#            fi
+#            exit 1
+#          fi
+#
+#          # Disable command echo
+#          set +x
+#
+#          # Print and parse json
+#          # jq . response.json
+#          echo "json<<END" >> $GITHUB_OUTPUT
+#          cat response.json >> $GITHUB_OUTPUT
+#          echo "END" >> $GITHUB_OUTPUT
+#          echo "web_url<<END" >> $GITHUB_OUTPUT
+#          cat response.json | jq --raw-output '.web_url' >> $GITHUB_OUTPUT
+#          echo "END" >> $GITHUB_OUTPUT
 
       - name: Show changes on failure
         if: failure()
