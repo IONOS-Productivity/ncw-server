@@ -291,16 +291,11 @@ jobs:
 
       # Push to JFrog for ionos-dev branch builds
       - name: Setup JFrog CLI
-        uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
-        env:
-          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
-          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
-          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
-
-      - name: Ping the JF server
-        run: |
-          # Ping the server
-          jf rt ping
+        uses: ./.github/actions/setup-jfrog
+        with:
+          jf-url: ${{ secrets.JF_ARTIFACTORY_URL }}
+          jf-user: ${{ secrets.JF_ARTIFACTORY_USER }}
+          jf-access-token: ${{ secrets.JF_ACCESS_TOKEN }}
 
       - name: Push ${{ matrix.app_info.name }} to JFrog
         run: bash .github/scripts/upload-app-to-jfrog.sh
@@ -348,16 +343,11 @@ jobs:
 
       - name: Setup JFrog CLI
         if: needs.prepare-matrix.outputs.has_apps_to_restore == 'true'
-        uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
-        env:
-          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
-          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
-          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
-
-      - name: Ping the JF server
-        run: |
-          # Ping the server
-          jf rt ping
+        uses: ./.github/actions/setup-jfrog
+        with:
+          jf-url: ${{ secrets.JF_ARTIFACTORY_URL }}
+          jf-user: ${{ secrets.JF_ARTIFACTORY_USER }}
+          jf-access-token: ${{ secrets.JF_ACCESS_TOKEN }}
 
       - name: Restore cached apps
         if: needs.prepare-matrix.outputs.has_apps_to_restore == 'true'
@@ -538,17 +528,12 @@ jobs:
         with:
           name: nextcloud_workspace_build_artifact
 
-      # This action sets up the JFrog CLI with the Artifactory URL and access token
-      - uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
-        env:
-          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
-          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
-          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
-
-      - name: Ping the JF server
-        run: |
-          # Ping the server
-          jf rt ping
+      - name: Setup JFrog CLI
+        uses: ./.github/actions/setup-jfrog
+        with:
+          jf-url: ${{ secrets.JF_ARTIFACTORY_URL }}
+          jf-user: ${{ secrets.JF_ARTIFACTORY_USER }}
+          jf-access-token: ${{ secrets.JF_ACCESS_TOKEN }}
 
       - name: Upload build to artifactory
         id: artifactory_upload

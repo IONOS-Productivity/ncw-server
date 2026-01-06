@@ -1,0 +1,34 @@
+name: 'Setup JFrog CLI'
+description: 'Configure JFrog CLI with authentication and verify connection'
+
+inputs:
+  jf-url:
+    description: 'JFrog Artifactory URL'
+    required: true
+  jf-user:
+    description: 'JFrog username'
+    required: true
+  jf-access-token:
+    description: 'JFrog access token'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup JFrog CLI
+      uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
+      env:
+        JF_URL: ${{ inputs.jf-url }}
+        JF_USER: ${{ inputs.jf-user }}
+        JF_ACCESS_TOKEN: ${{ inputs.jf-access-token }}
+
+    - name: Verify JFrog connection
+      shell: bash
+      run: |
+        echo "🔌 Testing JFrog connection..."
+        if jf rt ping; then
+          echo "✅ JFrog connection successful"
+        else
+          echo "❌ JFrog connection failed"
+          exit 1
+        fi
