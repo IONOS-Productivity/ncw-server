@@ -839,9 +839,12 @@ jobs:
     # Configure at: https://github.com/IONOS-Productivity/ncw-server/settings/variables/actions
     if: |
       always() &&
-      needs.upload-to-artifactory.result == 'success' &&
       github.event_name == 'push' &&
       (github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' || github.ref_name == 'mk/dev/debug_pipeline_push') &&
+      needs.prepare-matrix.result == 'success' &&
+      (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
+      needs.build-artifact.result == 'success' &&
+      needs.upload-to-artifactory.result == 'success' &&
       vars.DISABLE_REMOTE_TRIGGER != 'true'
     steps:
       - name: Trigger remote workflow
