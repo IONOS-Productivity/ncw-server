@@ -632,7 +632,7 @@ jobs:
     # Upload the artifact to the Artifactory repository on PR *OR* on "mk/dev/ionos-dev|ionos-stable" branch push defined in the on:push:branches
     if: |
       always() &&
-      (github.event_name == 'pull_request' || github.ref_name == 'mk/dev/ionos-dev' || github.ref_name == 'ionos-stable') &&
+      (github.event_name == 'pull_request' || github.ref_name == 'mk/dev/debug_pipeline_push' || github.ref_name == 'ionos-stable') &&
       needs.prepare-matrix.result == 'success' &&
       (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
       needs.build-artifact.result == 'success'
