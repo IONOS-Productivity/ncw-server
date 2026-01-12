@@ -13,7 +13,9 @@ use OC\Installer;
 use OC\Setup;
 use OC\SystemConfig;
 use OCP\Defaults;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IL10N;
+use OCP\Install\Events\InstallationCompletedEvent;
 use OCP\L10N\IFactory as IL10NFactory;
 use OCP\Security\ISecureRandom;
 use Psr\Log\LoggerInterface;
@@ -28,6 +30,7 @@ class SetupTest extends \Test\TestCase {
 	protected LoggerInterface $logger;
 	protected ISecureRandom $random;
 	protected Installer $installer;
+	protected IEventDispatcher $eventDispatcher;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -42,9 +45,10 @@ class SetupTest extends \Test\TestCase {
 		$this->logger = $this->createMock(LoggerInterface::class);
 		$this->random = $this->createMock(ISecureRandom::class);
 		$this->installer = $this->createMock(Installer::class);
+		$this->eventDispatcher = $this->createMock(IEventDispatcher::class);
 		$this->setupClass = $this->getMockBuilder(Setup::class)
 			->onlyMethods(['class_exists', 'is_callable', 'getAvailableDbDriversForPdo'])
-			->setConstructorArgs([$this->config, $this->iniWrapper, $this->l10nFactory, $this->defaults, $this->logger, $this->random, $this->installer])
+			->setConstructorArgs([$this->config, $this->iniWrapper, $this->l10nFactory, $this->defaults, $this->logger, $this->random, $this->installer, $this->eventDispatcher])
 			->getMock();
 	}
 
@@ -169,5 +173,36 @@ class SetupTest extends \Test\TestCase {
 			'invalid' => ['invalid', false],
 			'empty' => ['', false],
 		];
+	}
+
+	/**
+	 * Test that Setup class has eventDispatcher injected
+	 */
+	public function testSetupHasEventDispatcher(): void {
+		$reflectionClass = new \ReflectionClass($this->setupClass);
+		$property = $reflectionClass->getProperty('eventDispatcher');
+		$property->setAccessible(true);
+
+		$eventDispatcher = $property->getValue($this->setupClass);
+
+		$this->assertInstanceOf(IEventDispatcher::class, $eventDispatcher);
+	}
+
+	/**
+	 * Test that event dispatcher can dispatch InstallationCompletedEvent
+	 */
+	public function testEventDispatcherCanDispatchInstallationCompletedEvent(): void {
+		$dataDir = '/tmp/test-data';
+		$adminUsername = 'testadmin';
+		$adminEmail = 'admin@test.com';
+
+		$eventDispatcher = $this->createMock(IEventDispatcher::class);
+		$eventDispatcher->expects($this->once())
+			->method('dispatchTyped')
+			->with($this->isInstanceOf(InstallationCompletedEvent::class));
+
+		// Dispatch the event
+		$event = new InstallationCompletedEvent($dataDir, $adminUsername, $adminEmail);
+		$eventDispatcher->dispatchTyped($event);
 	}
 }
