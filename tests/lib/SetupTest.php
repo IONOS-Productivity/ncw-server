@@ -190,7 +190,7 @@ class SetupTest extends \Test\TestCase {
 
 	/**
 	 * Helper method to extract event parameters from install options
-	 * This mirrors the logic in Setup::install() at lines 329 and 502-503
+	 * This mirrors the logic in Setup::install() at line 329 for dataDir and lines 502-503 for admin parameters
 	 */
 	private function extractInstallationEventParameters(array $options): array {
 		$dataDir = htmlspecialchars_decode($options['directory']);
@@ -206,7 +206,7 @@ class SetupTest extends \Test\TestCase {
 	 *
 	 * This test verifies that the InstallationCompletedEvent can be properly constructed with
 	 * the parameters that Setup::install() extracts from the options array (see Setup.php line 329
-	 * for dataDir extraction and lines 502-503 for admin parameters).
+	 * for dataDir and lines 502-503 for admin parameters).
 	 *
 	 * Note: Testing that Setup::install() actually dispatches this event requires a full integration
 	 * test with database setup, file system operations, and app installation, which is beyond the
@@ -223,7 +223,7 @@ class SetupTest extends \Test\TestCase {
 		// Extract parameters the same way Setup::install() does
 		[$dataDir, $adminUsername, $adminEmail] = $this->extractInstallationEventParameters($options);
 
-		// Create the event as Setup::install() does at lines 505-506
+		// Create the event as Setup::install() does at lines 504-506
 		$event = new InstallationCompletedEvent($dataDir, $adminUsername, $adminEmail);
 
 		// Verify the event contains the expected values
