@@ -191,6 +191,9 @@ class SetupTest extends \Test\TestCase {
 	/**
 	 * Helper method to extract event parameters from install options
 	 * This mirrors the logic in Setup::install() at line 329 for dataDir and lines 502-503 for admin parameters
+	 * 
+	 * Note: This assumes 'directory' key is present in options. Setup::install() has a fallback at lines 321-323
+	 * that sets a default directory if empty, but our tests always provide this key.
 	 */
 	private function extractInstallationEventParameters(array $options): array {
 		$dataDir = htmlspecialchars_decode($options['directory']);
