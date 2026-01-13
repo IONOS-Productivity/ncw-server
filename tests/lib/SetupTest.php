@@ -189,20 +189,62 @@ class SetupTest extends \Test\TestCase {
 	}
 
 	/**
-	 * Test that event dispatcher can dispatch InstallationCompletedEvent
+	 * Test that InstallationCompletedEvent can be created with parameters from install options
+	 *
+	 * This test verifies that the InstallationCompletedEvent can be properly constructed with
+	 * the parameters that Setup::install() extracts from the options array (see Setup.php lines 502-506).
+	 *
+	 * Note: Testing that Setup::install() actually dispatches this event requires a full integration
+	 * test with database setup, file system operations, and app installation, which is beyond the
+	 * scope of a unit test. The event class itself is thoroughly tested in InstallationCompletedEventTest.php.
 	 */
-	public function testEventDispatcherCanDispatchInstallationCompletedEvent(): void {
-		$dataDir = '/tmp/test-data';
-		$adminUsername = 'testadmin';
-		$adminEmail = 'admin@test.com';
+	public function testInstallationCompletedEventParametersFromInstallOptions(): void {
+		// Simulate the options array as passed to Setup::install()
+		$options = [
+			'directory' => '/path/to/data',
+			'adminlogin' => 'admin',
+			'adminemail' => 'admin@example.com',
+		];
 
-		$eventDispatcher = $this->createMock(IEventDispatcher::class);
-		$eventDispatcher->expects($this->once())
-			->method('dispatchTyped')
-			->with($this->isInstanceOf(InstallationCompletedEvent::class));
+		// Extract parameters the same way Setup::install() does at lines 502-503
+		$dataDir = htmlspecialchars_decode($options['directory']);
+		$disableAdminUser = (bool)($options['admindisable'] ?? false);
+		$adminUsername = !$disableAdminUser ? ($options['adminlogin'] ?? null) : null;
+		$adminEmail = !empty($options['adminemail']) ? $options['adminemail'] : null;
 
-		// Dispatch the event
+		// Create the event as Setup::install() does at line 505
 		$event = new InstallationCompletedEvent($dataDir, $adminUsername, $adminEmail);
-		$eventDispatcher->dispatchTyped($event);
+
+		// Verify the event contains the expected values
+		$this->assertEquals($dataDir, $event->getDataDirectory());
+		$this->assertEquals($adminUsername, $event->getAdminUsername());
+		$this->assertEquals($adminEmail, $event->getAdminEmail());
+		$this->assertTrue($event->hasAdminUser());
+	}
+
+	/**
+	 * Test that event parameters handle disabled admin user correctly
+	 *
+	 * This tests the scenario where Setup::install() is called with admindisable=true,
+	 * resulting in a null adminUsername in the event.
+	 */
+	public function testInstallationCompletedEventWithDisabledAdminUser(): void {
+		$options = [
+			'directory' => '/path/to/data',
+			'admindisable' => true,
+		];
+
+		// Extract parameters as Setup::install() does
+		$dataDir = htmlspecialchars_decode($options['directory']);
+		$disableAdminUser = (bool)($options['admindisable'] ?? false);
+		$adminUsername = !$disableAdminUser ? ($options['adminlogin'] ?? null) : null;
+		$adminEmail = !empty($options['adminemail']) ? $options['adminemail'] : null;
+
+		$event = new InstallationCompletedEvent($dataDir, $adminUsername, $adminEmail);
+
+		$this->assertEquals($dataDir, $event->getDataDirectory());
+		$this->assertNull($event->getAdminUsername());
+		$this->assertNull($event->getAdminEmail());
+		$this->assertFalse($event->hasAdminUser());
 	}
 }
