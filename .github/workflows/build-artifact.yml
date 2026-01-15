@@ -302,6 +302,35 @@ jobs:
           # Ping the server
           jf rt ping
 
+      - name: Get Job URL
+        id: get_job_url
+        continue-on-error: true
+        run: |
+          # Fetch the numeric job ID from GitHub API
+          API_RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs")
+          
+          HTTP_CODE=$(echo "$API_RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$API_RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "⚠️  WARNING: GitHub API request failed with HTTP code $HTTP_CODE"
+            echo "job_html_url=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          JOB_URL=$(echo "$RESPONSE_BODY" | jq -r '.jobs[] | select(.name == "build-external-apps (${{ matrix.app_info.name }})") | .html_url')
+          
+          if [ -z "$JOB_URL" ] || [ "$JOB_URL" = "null" ]; then
+            echo "⚠️  WARNING: Failed to extract job URL from API response"
+            echo "job_html_url=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "job_html_url=$JOB_URL" >> $GITHUB_OUTPUT
+          echo "Job URL: $JOB_URL"
+
       - name: Push ${{ matrix.app_info.name }} to JFrog
         run: |
           set -e
@@ -352,6 +381,11 @@ jobs:
           JFROG_PROPS="${JFROG_PROPS};app.sha=${APP_SHA}"
           JFROG_PROPS="${JFROG_PROPS};vcs.branch=${{ github.ref_name }}"
           JFROG_PROPS="${JFROG_PROPS};vcs.revision=${{ github.sha }}"
+          
+          # Add job URL if available
+          if [ -n "${{ steps.get_job_url.outputs.job_html_url }}" ]; then
+            JFROG_PROPS="${JFROG_PROPS};job.html_url=${{ steps.get_job_url.outputs.job_html_url }}"
+          fi
 
           echo ""
           echo "Uploading to JFrog..."
@@ -687,6 +721,35 @@ jobs:
           # Ping the server
           jf rt ping
 
+      - name: Get Job URL
+        id: get_job_url
+        continue-on-error: true
+        run: |
+          # Fetch the numeric job ID from GitHub API
+          API_RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs")
+          
+          HTTP_CODE=$(echo "$API_RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$API_RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "⚠️  WARNING: GitHub API request failed with HTTP code $HTTP_CODE"
+            echo "job_html_url=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          JOB_URL=$(echo "$RESPONSE_BODY" | jq -r '.jobs[] | select(.name == "Push to artifactory") | .html_url')
+          
+          if [ -z "$JOB_URL" ] || [ "$JOB_URL" = "null" ]; then
+            echo "⚠️  WARNING: Failed to extract job URL from API response"
+            echo "job_html_url=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "job_html_url=$JOB_URL" >> $GITHUB_OUTPUT
+          echo "Job URL: $JOB_URL"
+
       - name: Upload build to artifactory
         id: artifactory_upload
         run: |
@@ -713,6 +776,11 @@ jobs:
           JFROG_PROPS="build.nc_version=${{ needs.build-artifact.outputs.NC_VERSION }}"
           JFROG_PROPS="${JFROG_PROPS};vcs.branch=${{ github.ref }}"
           JFROG_PROPS="${JFROG_PROPS};vcs.revision=${{ github.sha }}"
+          
+          # Add job URL if available
+          if [ -n "${{ steps.get_job_url.outputs.job_html_url }}" ]; then
+            JFROG_PROPS="${JFROG_PROPS};job.html_url=${{ steps.get_job_url.outputs.job_html_url }}"
+          fi
 
           # Upload with retry logic (3 attempts with 30s delay)
           MAX_ATTEMPTS=3
