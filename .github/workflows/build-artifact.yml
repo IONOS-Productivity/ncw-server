@@ -711,7 +711,7 @@ jobs:
 
           # Build properties for artifact metadata
           JFROG_PROPS="build.nc_version=${{ needs.build-artifact.outputs.NC_VERSION }}"
-          JFROG_PROPS="${JFROG_PROPS};vcs.branch=${{ github.ref }}"
+          JFROG_PROPS="${JFROG_PROPS};vcs.branch=${{ github.ref_name }}"
           JFROG_PROPS="${JFROG_PROPS};vcs.revision=${{ github.sha }}"
 
           # Upload with retry logic (3 attempts with 30s delay)
