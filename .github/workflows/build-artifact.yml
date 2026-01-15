@@ -306,10 +306,26 @@ jobs:
         id: get_job_url
         run: |
           # Fetch the numeric job ID from GitHub API
-          JOB_URL=$(curl -s -H "Authorization: Bearer ${{ github.token }}" \
+          API_RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer ${{ github.token }}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
-            | jq -r '.jobs[] | select(.name == "build-external-apps (${{ matrix.app_info.name }})") | .html_url')
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs")
+          
+          HTTP_CODE=$(echo "$API_RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$API_RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ ERROR: GitHub API request failed with HTTP code $HTTP_CODE"
+            exit 1
+          fi
+          
+          JOB_URL=$(echo "$RESPONSE_BODY" | jq -r '.jobs[] | select(.name == "build-external-apps (${{ matrix.app_info.name }})") | .html_url')
+          
+          if [ -z "$JOB_URL" ] || [ "$JOB_URL" = "null" ]; then
+            echo "❌ ERROR: Failed to extract job URL from API response"
+            echo "Response body: $RESPONSE_BODY"
+            exit 1
+          fi
+          
           echo "job_html_url=$JOB_URL" >> $GITHUB_OUTPUT
           echo "Job URL: $JOB_URL"
 
@@ -703,10 +719,26 @@ jobs:
         id: get_job_url
         run: |
           # Fetch the numeric job ID from GitHub API
-          JOB_URL=$(curl -s -H "Authorization: Bearer ${{ github.token }}" \
+          API_RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer ${{ github.token }}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
-            | jq -r '.jobs[] | select(.name == "Push to artifactory") | .html_url')
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs")
+          
+          HTTP_CODE=$(echo "$API_RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$API_RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ ERROR: GitHub API request failed with HTTP code $HTTP_CODE"
+            exit 1
+          fi
+          
+          JOB_URL=$(echo "$RESPONSE_BODY" | jq -r '.jobs[] | select(.name == "Push to artifactory") | .html_url')
+          
+          if [ -z "$JOB_URL" ] || [ "$JOB_URL" = "null" ]; then
+            echo "❌ ERROR: Failed to extract job URL from API response"
+            echo "Response body: $RESPONSE_BODY"
+            exit 1
+          fi
+          
           echo "job_html_url=$JOB_URL" >> $GITHUB_OUTPUT
           echo "Job URL: $JOB_URL"
 
