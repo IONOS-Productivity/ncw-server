@@ -358,15 +358,18 @@ jobs:
           JFROG_PATH="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/apps/${{ env.CACHE_VERSION }}/${APP_NAME}/${ARCHIVE_NAME}"
 
           # Build properties for artifact metadata
-          JFROG_PROPS="app.name=${APP_NAME}"
-          JFROG_PROPS="${JFROG_PROPS};app.sha=${APP_SHA}"
-          JFROG_PROPS="${JFROG_PROPS};vcs.branch=${{ github.ref_name }}"
-          JFROG_PROPS="${JFROG_PROPS};vcs.revision=${{ github.sha }}"
+          JFROG_PROPS_LIST=()
+          JFROG_PROPS_LIST+=("app.name=${APP_NAME}")
+          JFROG_PROPS_LIST+=("app.sha=${APP_SHA}")
+          JFROG_PROPS_LIST+=("vcs.branch=${{ github.ref_name }}")
+          JFROG_PROPS_LIST+=("vcs.revision=${{ github.sha }}")
           # Add job URL if available
           JOB_URL="${{ steps.get_job_data.outputs.job_html_url }}"
           if [ -n "$JOB_URL" ]; then
-            JFROG_PROPS="${JFROG_PROPS};job.html_url=$JOB_URL"
+            JFROG_PROPS_LIST+=("job.html_url=$JOB_URL")
           fi
+          # Join properties into a single semicolon-separated string
+          JFROG_PROPS=$(IFS=';'; printf '%s' "${JFROG_PROPS_LIST[*]}")
 
           echo ""
           echo "Uploading to JFrog..."
@@ -741,14 +744,17 @@ jobs:
           export PATH_TO_LATEST_ARTIFACT="${PATH_TO_DIRECTORY}/${PATH_TO_FILE}"
 
           # Build properties for artifact metadata
-          JFROG_PROPS="build.nc_version=${{ needs.build-artifact.outputs.NC_VERSION }}"
-          JFROG_PROPS="${JFROG_PROPS};vcs.branch=${{ github.ref_name }}"
-          JFROG_PROPS="${JFROG_PROPS};vcs.revision=${{ github.sha }}"
+          JFROG_PROPS_LIST=()
+          JFROG_PROPS_LIST+=("build.nc_version=${{ needs.build-artifact.outputs.NC_VERSION }}")
+          JFROG_PROPS_LIST+=("vcs.branch=${{ github.ref_name }}")
+          JFROG_PROPS_LIST+=("vcs.revision=${{ github.sha }}")
           # Add job URL if available
           JOB_URL="${{ steps.get_job_data.outputs.job_html_url }}"
           if [ -n "$JOB_URL" ]; then
-            JFROG_PROPS="${JFROG_PROPS};job.html_url=$JOB_URL"
+            JFROG_PROPS_LIST+=("job.html_url=$JOB_URL")
           fi
+          # Join properties into a single semicolon-separated string
+          JFROG_PROPS=$(IFS=';'; printf '%s' "${JFROG_PROPS_LIST[*]}")
 
           # Upload with retry logic (3 attempts with 30s delay)
           MAX_ATTEMPTS=3
