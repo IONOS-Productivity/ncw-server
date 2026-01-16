@@ -38,6 +38,16 @@ on:
         required: false
         type: boolean
         default: false
+      cache_version_suffix:
+        description: 'Optional cache version suffix (e.g., "test", "debug") - creates separate cache namespace'
+        required: false
+        type: string
+        default: ''
+      apps_to_rebuild:
+        description: 'Comma-separated list of specific apps to rebuild (e.g., "app1,app2") - ignores cache for these apps only'
+        required: false
+        type: string
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/ionos-dev' && github.run_id || github.event.pull_request.number || github.ref }}
@@ -182,14 +192,21 @@ jobs:
         id: detect
         env:
           GH_TOKEN: ${{ github.token }}
-          CACHE_VERSION: ${{ env.CACHE_VERSION }}
+          CACHE_VERSION: ${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'false' }}
+          APPS_TO_REBUILD: ${{ github.event.inputs.apps_to_rebuild || '' }}
           JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
           JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
           JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
           ARTIFACTORY_REPOSITORY_SNAPSHOT: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}
           GITHUB_REF: ${{ github.ref }}
         run: |
+          # Show effective cache version
+          echo "Base CACHE_VERSION: ${{ env.CACHE_VERSION }}"
+          echo "Cache version suffix: ${{ github.event.inputs.cache_version_suffix || '(none)' }}"
+          echo "Effective CACHE_VERSION: ${CACHE_VERSION}"
+          echo "Apps to rebuild: ${{ github.event.inputs.apps_to_rebuild || '(none)' }}"
+          echo ""
           bash .github/scripts/detect-app-cache.sh '${{ steps.set_matrix.outputs.matrix }}'
 
   build-external-apps:
@@ -287,7 +304,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ steps.app-config.outputs.path }}
-          key: ${{ env.CACHE_VERSION }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
+          key: ${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
 
       # Push to JFrog for ionos-dev branch builds
       - name: Setup JFrog CLI
@@ -318,12 +335,16 @@ jobs:
           APP_NAME="${{ matrix.app_info.name }}"
           APP_SHA="${{ matrix.app_info.sha }}"
           APP_PATH="${{ steps.app-config.outputs.path }}"
+          
+          # Compute effective cache version with suffix
+          EFFECTIVE_CACHE_VERSION="${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}"
 
           echo "=== JFrog Upload Debug Info ==="
           echo "📦 Packaging $APP_NAME for JFrog upload..."
           echo "App Name: $APP_NAME"
           echo "App SHA: $APP_SHA"
           echo "App Path: $APP_PATH"
+          echo "Cache Version: $EFFECTIVE_CACHE_VERSION"
           echo "Repository: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
           echo "==============================="
 
@@ -355,7 +376,7 @@ jobs:
 
           # Upload to JFrog - store in snapshot repo under dev/apps/
           # Include CACHE_VERSION in path to enable complete cache invalidation
-          JFROG_PATH="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/apps/${{ env.CACHE_VERSION }}/${APP_NAME}/${ARCHIVE_NAME}"
+          JFROG_PATH="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${ARCHIVE_NAME}"
 
           # Build properties for artifact metadata
           JFROG_PROPS_LIST=()
@@ -1172,9 +1193,12 @@ jobs:
           echo ""
           echo "### Workflow Inputs (if workflow_dispatch)"
           echo "Force Rebuild: ${{ github.event.inputs.force_rebuild || 'N/A' }}"
+          echo "Cache Version Suffix: ${{ github.event.inputs.cache_version_suffix || 'N/A' }}"
+          echo "Apps to Rebuild: ${{ github.event.inputs.apps_to_rebuild || 'N/A' }}"
           echo ""
           echo "### Environment Variables"
-          echo "CACHE_VERSION: ${{ env.CACHE_VERSION }}"
+          echo "Base CACHE_VERSION: ${{ env.CACHE_VERSION }}"
+          echo "Effective CACHE_VERSION: ${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}"
           echo "TARGET_PACKAGE_NAME: ${{ env.TARGET_PACKAGE_NAME }}"
           echo "ARTIFACTORY_REPOSITORY_SNAPSHOT: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
           echo ""
