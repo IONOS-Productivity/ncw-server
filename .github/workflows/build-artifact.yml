@@ -76,7 +76,16 @@ jobs:
       apps_sha_map: ${{ steps.detect.outputs.apps_sha_map }}
       has_apps_to_build: ${{ steps.detect.outputs.has_apps_to_build }}
       has_apps_to_restore: ${{ steps.detect.outputs.has_apps_to_restore }}
+      effective_cache_version: ${{ steps.compute_cache_version.outputs.effective_cache_version }}
     steps:
+      - name: Compute effective cache version
+        id: compute_cache_version
+        run: |
+          # Compute cache version with optional suffix to create a single source of truth
+          EFFECTIVE_VERSION="${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}"
+          echo "effective_cache_version=$EFFECTIVE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Effective cache version: $EFFECTIVE_VERSION"
+
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
@@ -192,7 +201,7 @@ jobs:
         id: detect
         env:
           GH_TOKEN: ${{ github.token }}
-          CACHE_VERSION: ${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}
+          CACHE_VERSION: ${{ steps.compute_cache_version.outputs.effective_cache_version }}
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'false' }}
           APPS_TO_REBUILD: ${{ github.event.inputs.apps_to_rebuild || '' }}
           JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
@@ -304,7 +313,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ steps.app-config.outputs.path }}
-          key: ${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
+          key: ${{ needs.prepare-matrix.outputs.effective_cache_version }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
 
       # Push to JFrog for ionos-dev branch builds
       - name: Setup JFrog CLI
@@ -336,8 +345,8 @@ jobs:
           APP_SHA="${{ matrix.app_info.sha }}"
           APP_PATH="${{ steps.app-config.outputs.path }}"
           
-          # Compute effective cache version with suffix
-          EFFECTIVE_CACHE_VERSION="${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}"
+          # Use precomputed effective cache version
+          EFFECTIVE_CACHE_VERSION="${{ needs.prepare-matrix.outputs.effective_cache_version }}"
 
           echo "=== JFrog Upload Debug Info ==="
           echo "📦 Packaging $APP_NAME for JFrog upload..."
@@ -391,7 +400,9 @@ jobs:
             JFROG_PROPS_LIST+=("job.html_url=${JOB_URL}")
           fi
 
-          # Join properties into a single semicolon-separated string
+          # Join properties into a single semicolon-separated string using IFS and array expansion
+          # This bash technique temporarily sets IFS (Internal Field Separator) to ';' and expands
+          # the array with [*] which joins elements using the first character of IFS
           JFROG_PROPS=$(IFS=';'; printf '%s' "${JFROG_PROPS_LIST[*]}")
 
           echo ""
@@ -778,7 +789,9 @@ jobs:
             JFROG_PROPS_LIST+=("job.html_url=${JOB_URL}")
           fi
 
-          # Join properties into a single semicolon-separated string
+          # Join properties into a single semicolon-separated string using IFS and array expansion
+          # This bash technique temporarily sets IFS (Internal Field Separator) to ';' and expands
+          # the array with [*] which joins elements using the first character of IFS
           JFROG_PROPS=$(IFS=';'; printf '%s' "${JFROG_PROPS_LIST[*]}")
 
           # Upload with retry logic (3 attempts with 30s delay)
@@ -1198,7 +1211,7 @@ jobs:
           echo ""
           echo "### Environment Variables"
           echo "Base CACHE_VERSION: ${{ env.CACHE_VERSION }}"
-          echo "Effective CACHE_VERSION: ${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}"
+          echo "Effective CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}"
           echo "TARGET_PACKAGE_NAME: ${{ env.TARGET_PACKAGE_NAME }}"
           echo "ARTIFACTORY_REPOSITORY_SNAPSHOT: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
           echo ""

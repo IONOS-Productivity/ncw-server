@@ -117,9 +117,11 @@ echo "|-----|-----|-----------|--------|" >> "$GITHUB_STEP_SUMMARY"
 # Convert comma-separated apps list to array for easier checking
 if [ -n "$APPS_TO_REBUILD" ]; then
   IFS=',' read -ra REBUILD_APPS_ARRAY <<< "$APPS_TO_REBUILD"
-  # Trim whitespace from each app name
+  # Trim whitespace from each app name using bash parameter expansion
   for i in "${!REBUILD_APPS_ARRAY[@]}"; do
-    REBUILD_APPS_ARRAY[$i]=$(echo "${REBUILD_APPS_ARRAY[$i]}" | xargs)
+    # Remove leading and trailing whitespace
+    REBUILD_APPS_ARRAY[$i]="${REBUILD_APPS_ARRAY[$i]#"${REBUILD_APPS_ARRAY[$i]%%[![:space:]]*}"}"
+    REBUILD_APPS_ARRAY[$i]="${REBUILD_APPS_ARRAY[$i]%"${REBUILD_APPS_ARRAY[$i]##*[![:space:]]}"}"
   done
 else
   REBUILD_APPS_ARRAY=()

@@ -26,6 +26,15 @@ runs:
       run: |
         # Fetch the numeric job ID from GitHub API
         CURL_ERROR_FILE=$(mktemp)
+        
+        # Ensure temporary file cleanup on exit
+        cleanup() {
+          if [ -n "$CURL_ERROR_FILE" ] && [ -f "$CURL_ERROR_FILE" ]; then
+            rm -f "$CURL_ERROR_FILE"
+          fi
+        }
+        trap cleanup EXIT
+        
         API_RESPONSE=$(curl -sS -w "\n%{http_code}" \
           -H "Authorization: Bearer ${{ inputs.github-token }}" \
           -H "Accept: application/vnd.github+json" \
@@ -38,12 +47,10 @@ runs:
             echo "curl error output:"
             cat "$CURL_ERROR_FILE"
           fi
-          rm -f "$CURL_ERROR_FILE"
           echo "job_html_url=" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
-        rm -f "$CURL_ERROR_FILE"
         HTTP_CODE=$(echo "$API_RESPONSE" | tail -n1)
         RESPONSE_BODY=$(echo "$API_RESPONSE" | sed '$d')
 
