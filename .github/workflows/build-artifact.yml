@@ -657,6 +657,7 @@ jobs:
       BUILD_NAME: "nextcloud-workspace-snapshot"
 
     steps:
+      # Checkout is required to access the local composite action at ./.github/actions/get-job-data
       - name: Checkout repository
         uses: actions/checkout@v5
         with:

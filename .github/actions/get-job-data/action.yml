@@ -49,7 +49,7 @@ runs:
 
         if [ "$HTTP_CODE" != "200" ]; then
           echo "⚠️  WARNING: GitHub API request failed with $HTTP_CODE"
-          echo "job_html_url=" >> $GITHUB_OUTPUT
+          echo "job_html_url=" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
@@ -60,9 +60,9 @@ runs:
 
         if [ -z "$JOB_URL" ] || [ "$JOB_URL" = "null" ]; then
           echo "⚠️  WARNING: Failed to extract job URL from response for job name '$EXPECTED_JOB_NAME'. This may indicate a job-name mismatch, that the job has not started yet, or an unexpected API response format."
-          echo "job_html_url=" >> $GITHUB_OUTPUT
+          echo "job_html_url=" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
-        echo "job_html_url=$JOB_URL" >> $GITHUB_OUTPUT
+        echo "job_html_url=$JOB_URL" >> "$GITHUB_OUTPUT"
         echo "Job URL: $JOB_URL"
