@@ -31,6 +31,7 @@ on:
     branches:
       - ionos-dev
       - ionos-stable
+      - 'rc/*'
   workflow_dispatch:  # Manual trigger to bypass all caches
     inputs:
       force_rebuild:
@@ -142,9 +143,9 @@ jobs:
               echo "   ✅ Event type is 'push'"
             fi
 
-            if [ "${{ github.ref_name }}" != "ionos-dev" ] && [ "${{ github.ref_name }}" != "ionos-stable" ]; then
-              echo "- ❌ Branch must be 'ionos-dev' or 'ionos-stable' (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
-              echo "   ❌ Branch is '${{ github.ref_name }}' (must be 'ionos-dev' or 'ionos-stable')"
+            if [ "${{ github.ref_name }}" != "ionos-dev" ] && [ "${{ github.ref_name }}" != "ionos-stable" ] && ! [[ "${{ github.ref_name }}" =~ ^rc/ ]]; then
+              echo "- ❌ Branch must be 'ionos-dev', 'ionos-stable', or 'rc/*' (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
+              echo "   ❌ Branch is '${{ github.ref_name }}' (must be 'ionos-dev', 'ionos-stable', or 'rc/*')"
               WILL_TRIGGER=false
             else
               echo "- ✅ Branch is '\`${{ github.ref_name }}\`'" >> $GITHUB_STEP_SUMMARY
@@ -908,13 +909,22 @@ jobs:
 
     name: Trigger remote workflow
     needs: [upload-to-artifactory]
-    # Trigger remote build on "ionos-dev|ionos-stable" branch *push* defined in the on:push:branches
+    # Trigger remote build on "ionos-dev|ionos-stable|rc/*" branch *push* defined in the on:push:branches
     # Can be disabled via repository variable 'DISABLE_REMOTE_TRIGGER' (set to 'true' to disable)
     # Configure at: https://github.com/IONOS-Productivity/ncw-server/settings/variables/actions
+    #
+    # Branch to GitLab Trigger Mapping:
+    # ┌──────────────┬──────────────┬─────────────┐
+    # │ ref_name     │ GITLAB_REF   │ BUILD_TYPE  │
+    # ├──────────────┼──────────────┼─────────────┤
+    # │ ionos-dev    │ stable       │ dev         │
+    # │ ionos-stable │ stable       │ stable      │
+    # │ rc/*         │ main         │ rc          │
+    # └──────────────┴──────────────┴─────────────┘
     if: |
       always() &&
       github.event_name == 'push' &&
-      (github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable') &&
+      (github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'rc/')) &&
       needs.upload-to-artifactory.result == 'success' &&
       vars.DISABLE_REMOTE_TRIGGER != 'true'
     steps:
@@ -926,6 +936,7 @@ jobs:
           # Determine build type based on branch:
           # - 'ionos-dev' branch triggers 'dev' build type
           # - 'ionos-stable' branch triggers 'stable' build type
+          # - 'rc/*' branches trigger 'rc' build type
           BUILD_TYPE="dev"
 
           # Override build type for stable branch
@@ -933,9 +944,24 @@ jobs:
               BUILD_TYPE="stable"
           fi
 
+          # Override build type for rc/* branches
+          if [[ "${{ github.ref_name }}" =~ ^rc/ ]]; then
+              BUILD_TYPE="rc"
+          fi
+
+          # Determine GitLab target branch based on build type
+          # - 'dev' and 'stable' build types target 'stable' branch
+          # - 'rc' build type targets 'main' branch
+          GITLAB_REF="stable"
+          if [ "$BUILD_TYPE" == "rc" ]; then
+              GITLAB_REF="main"
+          fi
+
           # Construct source build URL for traceability
           SOURCE_BUILD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           echo "Source Build URL: $SOURCE_BUILD_URL"
+          echo "Build Type: $BUILD_TYPE"
+          echo "GitLab Target Branch: $GITLAB_REF"
 
           # Trigger GitLab pipeline via webhook with retry logic (3 attempts with 30s delay)
           MAX_ATTEMPTS=3
@@ -953,7 +979,7 @@ jobs:
               --fail-with-body \
               -o response.json \
               --form token=${{ secrets.GITLAB_TOKEN }} \
-              --form ref="stable" \
+              --form ref="${GITLAB_REF}" \
               --form "variables[GITHUB_SHA]=${{ github.sha }}" \
               --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}" \
               --form "variables[NC_VERSION]=${{ needs.build-artifact.outputs.NC_VERSION }}" \
