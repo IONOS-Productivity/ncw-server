@@ -76,7 +76,7 @@ class Status extends Base {
 
 		if ($input->getOption('verbose') || !$input->getOption('exit-code')) {
 			$this->writeArrayInOutputFormat($input, $output, $values);
-			
+
 			// Add friendly status messages
 			if (!$installed) {
 				$output->writeln('<comment>Nextcloud is not installed yet</comment>');
