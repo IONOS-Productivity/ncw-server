@@ -49,7 +49,8 @@ class Status extends Base {
 		$databaseError = null;
 		if ($installed) {
 			try {
-				$this->connection->executeQuery('SELECT 1');
+				$result = $this->connection->executeQuery('SELECT 1');
+				$result->closeCursor();
 				$databaseStatus = 'connected';
 			} catch (\Exception $e) {
 				$databaseStatus = 'connection_failed';
