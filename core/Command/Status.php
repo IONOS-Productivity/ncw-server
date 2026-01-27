@@ -56,7 +56,7 @@ class Status extends Base {
 				$databaseError = $e->getMessage();
 			}
 		}
-		
+
 		$values = [
 			'installed' => $installed,
 			'version' => implode('.', $this->serverVersion->getVersion()),
