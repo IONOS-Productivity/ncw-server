@@ -776,7 +776,7 @@ jobs:
           if [ "${{ github.ref_name }}" == "ionos-stable" ]; then
               ARTIFACTORY_STAGE_PREFIX="stable"
           # set ARTIFACTORY_STAGE_PREFIX=rc on rc/* branches
-          elif [[ "${{ github.ref_name }}" == "rc/"* ]]; then
+          elif [[ "${{ github.ref_name }}" =~ ^rc/ ]]; then
               ARTIFACTORY_STAGE_PREFIX="rc"
           fi
 
@@ -948,7 +948,7 @@ jobs:
           if [ "${{ github.ref_name }}" == "ionos-stable" ]; then
               BUILD_TYPE="stable"
           # Override build type for rc/* branches
-          elif [[ "${{ github.ref_name }}" == "rc/"* ]]; then
+          elif [[ "${{ github.ref_name }}" =~ ^rc/ ]]; then
               BUILD_TYPE="rc"
           fi
 
