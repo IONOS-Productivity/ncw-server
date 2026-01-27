@@ -43,7 +43,7 @@ class Status extends Base {
 		$maintenanceMode = $this->config->getSystemValueBool('maintenance', false);
 		$needUpgrade = Util::needUpgrade();
 		$installed = $this->config->getSystemValueBool('installed', false);
-		
+
 		// Test database connection if Nextcloud is installed
 		$databaseStatus = 'not_configured';
 		$databaseError = null;
