@@ -156,7 +156,7 @@ jobs:
             fi
 
             # Check if branch matches expected patterns: ionos-dev, ionos-stable, or rc/*
-            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)$|^rc/'
+            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)$|^rc/.+$'
             if [[ ! "${{ github.ref_name }}" =~ $VALID_BRANCH_PATTERN ]]; then
               echo "- ❌ Branch must be 'ionos-dev', 'ionos-stable', or 'rc/*' (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
               echo "   ❌ Branch is '${{ github.ref_name }}' (must be 'ionos-dev', 'ionos-stable', or 'rc/*')"
