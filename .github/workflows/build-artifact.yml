@@ -51,7 +51,19 @@ on:
         default: ''
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || ((github.ref == 'refs/heads/ionos-dev' || github.ref == 'refs/heads/ionos-stable' || startsWith(github.ref, 'refs/heads/rc/')) && github.run_id || github.ref) }}
+  group: >-
+    ${{ github.workflow }}-${{
+      github.event_name == 'pull_request'
+        && format('pr-{0}', github.event.pull_request.number)
+        || (
+          (
+            contains(fromJson('["refs/heads/ionos-dev","refs/heads/ionos-stable"]'), github.ref)
+            || startsWith(github.ref, 'refs/heads/rc/')
+          )
+          && github.run_id
+          || github.ref
+        )
+    }}
   cancel-in-progress: true
 
 env:
@@ -144,9 +156,8 @@ jobs:
             fi
 
             # Check if branch matches expected patterns: ionos-dev, ionos-stable, or rc/*
-            if [ "${{ github.ref_name }}" != "ionos-dev" ] && \
-               [ "${{ github.ref_name }}" != "ionos-stable" ] && \
-               [[ ! "${{ github.ref_name }}" =~ ^rc/ ]]; then
+            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable|rc/)'
+            if [[ ! "${{ github.ref_name }}" =~ $VALID_BRANCH_PATTERN ]]; then
               echo "- ❌ Branch must be 'ionos-dev', 'ionos-stable', or 'rc/*' (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
               echo "   ❌ Branch is '${{ github.ref_name }}' (must be 'ionos-dev', 'ionos-stable', or 'rc/*')"
               WILL_TRIGGER=false
