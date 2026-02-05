@@ -520,6 +520,13 @@ jobs:
               if jf rt download "$JFROG_PATH" "$ARCHIVE_NAME" --flat=true; then
                 echo "✅ Downloaded successfully"
                 echo "Extracting to $APP_PATH..."
+                
+                # Remove existing directory to avoid conflicts with checkout submodules
+                if [ -d "$APP_PATH" ]; then
+                  echo "🗑️  Removing existing directory: $APP_PATH"
+                  rm -rf "$APP_PATH"
+                fi
+                
                 mkdir -p "$(dirname "$APP_PATH")"
                 tar -xzf "$ARCHIVE_NAME" -C "$(dirname "$APP_PATH")"
 
@@ -541,6 +548,12 @@ jobs:
               CACHE_KEY=$(echo "$app_json" | jq -r '.cache_key')
 
               echo "💾 Restoring from GitHub cache: $CACHE_KEY"
+
+              # Remove existing directory to avoid conflicts with checkout submodules
+              if [ -d "$APP_PATH" ]; then
+                echo "🗑️  Removing existing directory: $APP_PATH"
+                rm -rf "$APP_PATH"
+              fi
 
               # Use actions/cache/restore in a way that works in a script context
               # We need to use gh CLI to restore the cache
