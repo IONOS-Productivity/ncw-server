@@ -498,6 +498,34 @@ jobs:
           echo "📦 Restoring cached apps..."
           APPS_TO_RESTORE='${{ needs.prepare-matrix.outputs.apps_to_restore }}'
 
+          # Function to safely remove app directory before cache restoration
+          safe_remove_app_dir() {
+            local app_path="$1"
+
+            # Safety checks before removing directory
+            if [ -z "$app_path" ]; then
+              echo "❌ Error: app_path is empty, refusing to delete"
+              exit 1
+            fi
+
+            if [ "$app_path" = "/" ]; then
+              echo "❌ Error: app_path is root directory, refusing to delete"
+              exit 1
+            fi
+
+            # Verify path is under expected workspace directories
+            if [[ ! "$app_path" =~ ^$GITHUB_WORKSPACE/(apps-external|apps)/ ]]; then
+              echo "❌ Error: app_path '$app_path' is not under expected workspace directory"
+              exit 1
+            fi
+
+            # Remove directory if it exists
+            if [ -d "$app_path" ]; then
+              echo "🗑️  Removing existing directory: $app_path"
+              rm -rf "$app_path"
+            fi
+          }
+
           # Process each app in the restore list
           echo "$APPS_TO_RESTORE" | jq -c '.[]' | while read -r app_json; do
             APP_NAME=$(echo "$app_json" | jq -r '.name')
@@ -520,13 +548,10 @@ jobs:
               if jf rt download "$JFROG_PATH" "$ARCHIVE_NAME" --flat=true; then
                 echo "✅ Downloaded successfully"
                 echo "Extracting to $APP_PATH..."
-                
+
                 # Remove existing directory to avoid conflicts with checkout submodules
-                if [ -d "$APP_PATH" ]; then
-                  echo "🗑️  Removing existing directory: $APP_PATH"
-                  rm -rf "$APP_PATH"
-                fi
-                
+                safe_remove_app_dir "$APP_PATH"
+
                 mkdir -p "$(dirname "$APP_PATH")"
                 tar -xzf "$ARCHIVE_NAME" -C "$(dirname "$APP_PATH")"
 
@@ -550,10 +575,7 @@ jobs:
               echo "💾 Restoring from GitHub cache: $CACHE_KEY"
 
               # Remove existing directory to avoid conflicts with checkout submodules
-              if [ -d "$APP_PATH" ]; then
-                echo "🗑️  Removing existing directory: $APP_PATH"
-                rm -rf "$APP_PATH"
-              fi
+              safe_remove_app_dir "$APP_PATH"
 
               # Use actions/cache/restore in a way that works in a script context
               # We need to use gh CLI to restore the cache
