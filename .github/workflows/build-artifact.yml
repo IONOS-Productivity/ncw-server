@@ -514,7 +514,8 @@ jobs:
             fi
 
             # Verify path is under expected workspace directories
-            if [[ ! "$app_path" =~ ^"$GITHUB_WORKSPACE"/(apps-external|apps)/ ]]; then
+            local pattern="^${GITHUB_WORKSPACE}/(apps-external|apps)/"
+            if [[ ! "$app_path" =~ $pattern ]]; then
               echo "❌ Error: app_path '$app_path' is not under expected workspace directory"
               exit 1
             fi
