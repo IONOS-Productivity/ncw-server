@@ -32,6 +32,7 @@ on:
       - ionos-dev
       - ionos-stable
       - 'rc/**'
+      - '*/dev/*'
   workflow_dispatch:  # Manual trigger to bypass all caches
     inputs:
       force_rebuild:
@@ -153,11 +154,11 @@ jobs:
               echo "   ✅ Event type is 'push'"
             fi
 
-            # Check if branch matches expected patterns: ionos-dev, ionos-stable, or rc/*
-            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)$|^rc/.*$'
+            # Check if branch matches expected patterns: ionos-dev, ionos-stable, rc/* or */dev/*
+            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)$|^rc/.*$|^[^/]+/dev/.*$'
             if [[ ! "${{ github.ref_name }}" =~ $VALID_BRANCH_PATTERN ]]; then
-              echo "- ❌ Branch must be 'ionos-dev', 'ionos-stable', or 'rc/*' (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
-              echo "   ❌ Branch is '${{ github.ref_name }}' (must be 'ionos-dev', 'ionos-stable', or 'rc/*')"
+              echo "- ❌ Branch must be 'ionos-dev', 'ionos-stable', 'rc/*' or '*/dev/*' (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
+              echo "   ❌ Branch is '${{ github.ref_name }}' (must be 'ionos-dev', 'ionos-stable', 'rc/*' or '*/dev/*')"
               WILL_TRIGGER=false
             else
               echo "- ✅ Branch is '\`${{ github.ref_name }}\`'" >> $GITHUB_STEP_SUMMARY
@@ -710,10 +711,10 @@ jobs:
 
   upload-to-artifactory:
     runs-on: self-hosted
-    # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-stable|rc/*" branch push defined in the on:push:branches *OR* on manual workflow_dispatch
+    # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-stable|rc/*|*/dev/*" branch push defined in the on:push:branches *OR* on manual workflow_dispatch
     if: |
       always() &&
-      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'rc/')) &&
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'rc/') || contains(github.ref_name, '/dev/')) &&
       needs.prepare-matrix.result == 'success' &&
       (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
       needs.build-artifact.result == 'success'
@@ -793,12 +794,13 @@ jobs:
         id: artifactory_upload
         run: |
           # Artifactory Build Storage Structure:
-          # | Branch/Event     | Stage Prefix   | Artifact Path                                                            |
-          # |------------------|----------------|--------------------------------------------------------------------------|
-          # | Pull Request     | dev            | dev/pr/nextcloud-workspace-pr-<number>.zip                               |
-          # | ionos-dev        | dev            | dev/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip       |
-          # | ionos-stable     | stable         | stable/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip    |
+          # | Branch/Event     | Stage Prefix   | Artifact Path                                                                              |
+          # |------------------|----------------|--------------------------------------------------------------------------------------------|
+          # | Pull Request     | dev            | dev/pr/nextcloud-workspace-pr-<number>.zip                                                 |
+          # | ionos-dev        | dev            | dev/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                         |
+          # | ionos-stable     | stable         | stable/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                      |
           # | rc/*             | rc             | rc/<github.ref_name>/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip        |
+          # | */dev/*          | dev-*          | dev-<prefix>/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                |
 
           ARTIFACTORY_STAGE_PREFIX="dev"
 
@@ -808,6 +810,11 @@ jobs:
           # set ARTIFACTORY_STAGE_PREFIX=rc on rc/* branches
           elif [[ "${{ github.ref_name }}" =~ ^rc/.*$ ]]; then
               ARTIFACTORY_STAGE_PREFIX="${{ github.ref_name }}"
+          # Extract prefix from */dev/* branches (e.g., 'ah/dev/feature' -> 'dev-ah')
+          elif [[ "${{ github.ref_name }}" =~ ^.*/dev/.*$ ]]; then
+              # Extract the part before '/dev/'
+              BRANCH_PREFIX=$(echo "${{ github.ref_name }}" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
+              ARTIFACTORY_STAGE_PREFIX="dev-${BRANCH_PREFIX}"
           fi
 
           export PATH_TO_DIRECTORY="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/${ARTIFACTORY_STAGE_PREFIX}"
@@ -958,13 +965,13 @@ jobs:
 
     name: Trigger remote workflow
     needs: [build-artifact, upload-to-artifactory]
-    # Trigger remote build on "ionos-dev|ionos-stable|rc/*" branch *push* defined in the on:push:branches
+    # Trigger remote build on "ionos-dev|ionos-stable|rc/*|*/dev/*" branch *push* defined in the on:push:branches
     # Can be disabled via repository variable 'DISABLE_REMOTE_TRIGGER' (set to 'true' to disable)
     # Configure at: https://github.com/IONOS-Productivity/ncw-server/settings/variables/actions
     if: |
       always() &&
       github.event_name == 'push' &&
-      (github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'rc/')) &&
+      (github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'rc/') || contains(github.ref_name, '/dev/')) &&
       needs.build-artifact.result == 'success' &&
       needs.upload-to-artifactory.result == 'success' &&
       vars.DISABLE_REMOTE_TRIGGER != 'true'
@@ -1040,6 +1047,7 @@ jobs:
           # | ionos-dev    | main         | dev         |
           # | ionos-stable | main         | stable      |
           # | rc/*         | main         | rc          |
+          # | */dev/*      | main         | dev-*       |
 
           BUILD_TYPE="dev"
 
@@ -1049,6 +1057,11 @@ jobs:
           # Override build type for rc/* branches
           elif [[ "${{ github.ref_name }}" =~ ^rc/ ]]; then
               BUILD_TYPE="rc"
+          # Extract prefix from */dev/* branches (e.g., 'ah/dev/feature' -> 'dev-ah')
+          elif [[ "${{ github.ref_name }}" =~ ^.*/dev/.*$ ]]; then
+              # Extract the part before '/dev/'
+              BRANCH_PREFIX=$(echo "${{ github.ref_name }}" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
+              BUILD_TYPE="dev-${BRANCH_PREFIX}" 
           fi
 
           # Construct source build URL for traceability
