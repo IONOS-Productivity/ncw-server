@@ -1,0 +1,137 @@
+name: Promote QA-approved artifacts to stable branch
+
+# - Takes a commit SHA as input
+# - Fast-forward merges it to ionos-stable (no new commits)
+# - Promotes the exact artifact from Artifactory (no rebuild)
+
+on: 
+  workflow_dispatch: 
+    inputs:
+      sha:
+        description: 'Commit SHA to promote from ionos-dev to ionos-stable and copy artifacts for'
+        required: true
+        type: string
+env: 
+  SHA: ${{ inputs.sha }}
+  ARTIFACTORY_REPOSITORY_SNAPSHOT: ionos-productivity-ncwserver-snapshot
+  ARTIFACTORY_REPOSITORY_RELEASE: ionos-productivity-ncwserver-release
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-artifact
+  cancel-in-progress: false
+jobs: 
+  promote-git: 
+  # Fast-forward merge SHA from ionos-dev into ionos-stable
+  # (This ensures commit-hash is identical)
+    runs-on: ubuntu-latest
+    steps: 
+      - name: Checkout server
+        id: checkout_server
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      
+      - name: Verify SHA is in ionos-dev
+        id: verify_sha
+        run: |
+          set -euo pipefail
+          git fetch origin ionos-dev test-stable
+          git checkout -B test-stable origin/test-stable
+          if ! git rev-parse --verify "$SHA^{commit}" >/dev/null 2>&1; then
+            echo "Error: SHA is not a valid commit: $SHA"
+            exit 1
+          fi
+          # verify SHA is on ionos-dev
+          if ! git merge-base --is-ancestor "$SHA" origin/ionos-dev; then
+            echo "Error: SHA does not exist on ionos-dev: $SHA"
+            exit 1
+          fi
+      
+      - name: Fast-forward merge
+        id: ff_merge
+        run: |
+          set -euo pipefail
+          # Merge will fail if not possible
+          if ! git merge --ff-only "$SHA"; then
+            echo "Fast-forward merge not possible"
+            exit 1
+          fi
+
+          # Ensure that the resulting HEAD is exactly the requested SHA.
+          # This prevents the case where SHA is behind ionos-stable and
+          # 'git merge --ff-only' reports "Already up to date" without
+          # moving the branch to $SHA.
+          HEAD_SHA="$(git rev-parse HEAD)"
+          if [ "$HEAD_SHA" != "$SHA" ]; then
+            echo "Error: After merge, HEAD ($HEAD_SHA) does not match requested SHA ($SHA)."
+            echo "Refusing to push ionos-stable or promote artifacts for a mismatched commit."
+            exit 1
+          fi
+
+          git push origin HEAD:test-stable
+  promote-artifact: 
+  # Copy specified artifact to the release repo -> No rebuild
+  # (ionos-productivity-ncwserver-release)
+    needs: promote-git
+    runs-on: ubuntu-latest
+    steps: 
+      - name: Setup JFrog CLI
+        id: setup_jf
+        uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
+        env:
+          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+
+      - name: Ping the JF server
+        run: |
+          # Ping the server
+          jf rt ping
+
+      - name: Find artifacts matching the SHA
+        id: find_artifact
+        run: |
+          # Expected Artifactory layout:
+          # ionos-productivity-ncwserver-snapshot/
+          #   dev/<branch-name>/$SHA/<artifact-files>
+          #
+          # We search for a single .tar.gz artifact for the given SHA and
+          # derive its containing directory. This avoids using wildcards
+          # for the branch component when copying to the release repo.
+          set -e
+          SEARCH_RESULT=$(jf rt search --format=json --limit=2 "${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/dev/*/$SHA/*.tar.gz")
+          MATCH_COUNT=$(echo "$SEARCH_RESULT" | jq '.results | length')
+          
+          if [ "$MATCH_COUNT" -eq 0 ]; then
+            echo "No artifact with SHA $SHA found."
+            exit 1
+          fi
+          
+          if [ "$MATCH_COUNT" -gt 1 ]; then
+            echo "Multiple artifacts found for SHA $SHA; expected exactly one."
+            echo "$SEARCH_RESULT"
+            exit 1
+          fi
+          
+          ARTIFACT_REPO=$(echo "$SEARCH_RESULT" | jq -r '.results[0].repo')
+          ARTIFACT_PATH=$(echo "$SEARCH_RESULT" | jq -r '.results[0].path')
+          # Derive the directory that contains all artifacts for this SHA
+          ARTIFACT_DIR_PATH=$(dirname "$ARTIFACT_PATH")
+          ARTIFACT_DIR="$ARTIFACT_REPO/$ARTIFACT_DIR_PATH"
+          
+          echo "Using artifact directory: $ARTIFACT_DIR"
+          # Expose the directory as a step output for the copy step
+          echo "artifact_dir=$ARTIFACT_DIR" >> "$GITHUB_OUTPUT"
+      - name: Copy artifact to target
+        id: copy_artifact
+        run: |
+          jf rt copy \
+          "${{ steps.find_artifact.outputs.artifact_dir }}/*" \
+          "${{ env.ARTIFACTORY_REPOSITORY_RELEASE }}/stable/${SHA}/"
+
+      - name: Confirm promoted artifacts
+        run: |
+          jf rt search --format=table "${{ env.ARTIFACTORY_REPOSITORY_RELEASE }}/stable/${SHA}/*"
