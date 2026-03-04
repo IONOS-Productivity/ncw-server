@@ -97,3 +97,6 @@
 [submodule "apps-external/bruteforcesettings"]
 	path = apps-external/bruteforcesettings
 	url = git@github.com:IONOS-Productivity/nc-bruteforcesettings.git
+[submodule "apps-external/gdatavaas"]
+	path = apps-external/gdatavaas
+	url = git@github.com:GDATASoftwareAG/nextcloud-gdata-antivirus.git
