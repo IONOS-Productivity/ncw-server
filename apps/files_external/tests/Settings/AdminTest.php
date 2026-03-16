@@ -12,6 +12,7 @@ use OCA\Files_External\Service\GlobalStoragesService;
 use OCA\Files_External\Settings\Admin;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\Encryption\IManager;
+use OCP\IL10N;
 use Test\TestCase;
 
 class AdminTest extends TestCase {
@@ -25,6 +26,8 @@ class AdminTest extends TestCase {
 	private $backendService;
 	/** @var GlobalAuth|\PHPUnit\Framework\MockObject\MockObject */
 	private $globalAuth;
+	/** @var IL10N|\PHPUnit\Framework\MockObject\MockObject */
+	private $l10n;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -32,12 +35,17 @@ class AdminTest extends TestCase {
 		$this->globalStoragesService = $this->createMock(GlobalStoragesService::class);
 		$this->backendService = $this->createMock(BackendService::class);
 		$this->globalAuth = $this->createMock(GlobalAuth::class);
+		$this->l10n = $this->createMock(IL10N::class);
+		$this->l10n->method('t')->willReturnCallback(function ($text) {
+			return $text;
+		});
 
 		$this->admin = new Admin(
 			$this->encryptionManager,
 			$this->globalStoragesService,
 			$this->backendService,
-			$this->globalAuth
+			$this->globalAuth,
+			$this->l10n
 		);
 	}
 
