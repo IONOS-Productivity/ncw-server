@@ -1,0 +1,16 @@
+name: MK Test Workflow Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'SHA to print'
+        required: true
+        type: string
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello World
+        run: echo "Hello world ${{ inputs.sha }}"
