@@ -97,6 +97,3 @@
 [submodule "apps-external/bruteforcesettings"]
 	path = apps-external/bruteforcesettings
 	url = git@github.com:IONOS-Productivity/nc-bruteforcesettings.git
-[submodule "apps-external/user_saml"]
-	path = apps-external/user_saml
-	url = git@github.com:IONOS-Productivity/nc-user_saml.git
