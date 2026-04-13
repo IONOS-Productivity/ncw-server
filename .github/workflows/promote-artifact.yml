@@ -37,8 +37,8 @@ jobs:
         id: verify_sha
         run: |
           set -euo pipefail
-          git fetch origin ionos-dev test-stable
-          git checkout -B test-stable origin/test-stable
+          git fetch origin ionos-dev ionos-stable
+          git checkout -B ionos-stable origin/ionos-stable
           if ! git rev-parse --verify "$SHA^{commit}" >/dev/null 2>&1; then
             echo "Error: SHA is not a valid commit: $SHA"
             exit 1
@@ -70,7 +70,7 @@ jobs:
             exit 1
           fi
 
-          git push origin HEAD:test-stable
+          git push origin HEAD:ionos-stable
   promote-artifact: 
   # Copy specified artifact to the release repo -> No rebuild
   # (ionos-productivity-ncwserver-release)
