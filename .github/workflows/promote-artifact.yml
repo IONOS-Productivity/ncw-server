@@ -13,8 +13,7 @@ on:
         type: string
 env: 
   SHA: ${{ inputs.sha }}
-  ARTIFACTORY_REPOSITORY_SNAPSHOT: ionos-productivity-ncwserver-snapshot
-  ARTIFACTORY_REPOSITORY_RELEASE: ionos-productivity-ncwserver-release
+  ARTIFACTORY_REPOSITORY: ionos-productivity-ncwserver-snapshot
 
 permissions:
   contents: write
@@ -94,16 +93,17 @@ jobs:
       - name: Find artifacts matching the SHA
         id: find_artifact
         run: |
-          # Expected Artifactory layout:
+          # Artifactory layout:
           # ionos-productivity-ncwserver-snapshot/
-          #   dev/<branch-name>/$SHA/<artifact-files>
+          #   <category>/<branch-suffix>/ncw-<version>/<short-sha>/<artifact>.zip
           #
-          # We search for a single .tar.gz artifact for the given SHA and
-          # derive its containing directory. This avoids using wildcards
-          # for the branch component when copying to the release repo.
+          # The commit SHA is stored in the vcs.revision property, so we
+          # search by property rather than by path.
           set -e
-          SEARCH_RESULT=$(jf rt search --format=json --limit=2 "${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/dev/*/$SHA/*.tar.gz")
-          MATCH_COUNT=$(echo "$SEARCH_RESULT" | jq '.results | length')
+          SEARCH_RESULT=$(jf rt search --limit=2 \
+            --props="vcs.revision=$SHA" \
+            "${{ env.ARTIFACTORY_REPOSITORY }}/*")
+          MATCH_COUNT=$(echo "$SEARCH_RESULT" | jq 'length')
           
           if [ "$MATCH_COUNT" -eq 0 ]; then
             echo "No artifact with SHA $SHA found."
@@ -116,22 +116,18 @@ jobs:
             exit 1
           fi
           
-          ARTIFACT_REPO=$(echo "$SEARCH_RESULT" | jq -r '.results[0].repo')
-          ARTIFACT_PATH=$(echo "$SEARCH_RESULT" | jq -r '.results[0].path')
-          # Derive the directory that contains all artifacts for this SHA
-          ARTIFACT_DIR_PATH=$(dirname "$ARTIFACT_PATH")
-          ARTIFACT_DIR="$ARTIFACT_REPO/$ARTIFACT_DIR_PATH"
+          ARTIFACT_PATH=$(echo "$SEARCH_RESULT" | jq -r '.[0].path')
           
-          echo "Using artifact directory: $ARTIFACT_DIR"
-          # Expose the directory as a step output for the copy step
-          echo "artifact_dir=$ARTIFACT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Found artifact: $ARTIFACT_PATH"
+          echo "artifact_path=$ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Copy artifact to target
         id: copy_artifact
         run: |
-          jf rt copy \
-          "${{ steps.find_artifact.outputs.artifact_dir }}/*" \
-          "${{ env.ARTIFACTORY_REPOSITORY_RELEASE }}/stable/${SHA}/"
+          jf rt copy --flat \
+            "${{ steps.find_artifact.outputs.artifact_path }}" \
+            "${{ env.ARTIFACTORY_REPOSITORY }}/stable/${SHA}/"
 
       - name: Confirm promoted artifacts
         run: |
-          jf rt search --format=table "${{ env.ARTIFACTORY_REPOSITORY_RELEASE }}/stable/${SHA}/*"
+          jf rt search "${{ env.ARTIFACTORY_REPOSITORY }}/stable/${SHA}/*"
