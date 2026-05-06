@@ -8,6 +8,7 @@ namespace OCA\Theming\Settings;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
 use OCP\IConfig;
+use OCP\IL10N;
 use OCP\Settings\IDelegatedSettings;
 use OCP\Util;
 
@@ -16,6 +17,7 @@ class AdminLegalUrls implements IDelegatedSettings {
 	public function __construct(
 		private string $appName,
 		private IConfig $config,
+		private IL10N $l,
 		private IInitialState $initialState,
 	) {
 	}
@@ -40,12 +42,12 @@ class AdminLegalUrls implements IDelegatedSettings {
 	}
 
 	public function getName(): ?string {
-		return 'Advanced options';
+		return $this->l->t('Advanced options');
 	}
 
 	public function getAuthorizedAppConfig(): array {
 		return [
-			'theming' => '/(imprintUrl|privacyUrl)/',
+			$this->appName => ['/^(imprintUrl|privacyUrl)$/'],
 		];
 	}
 }
