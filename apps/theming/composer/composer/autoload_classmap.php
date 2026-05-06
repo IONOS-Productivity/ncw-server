@@ -28,6 +28,7 @@ return array(
     'OCA\\Theming\\Service\\ThemeInjectionService' => $baseDir . '/../lib/Service/ThemeInjectionService.php',
     'OCA\\Theming\\Service\\ThemesService' => $baseDir . '/../lib/Service/ThemesService.php',
     'OCA\\Theming\\Settings\\Admin' => $baseDir . '/../lib/Settings/Admin.php',
+    'OCA\\Theming\\Settings\\AdminLegalUrls' => $baseDir . '/../lib/Settings/AdminLegalUrls.php',
     'OCA\\Theming\\Settings\\AdminSection' => $baseDir . '/../lib/Settings/AdminSection.php',
     'OCA\\Theming\\Settings\\Personal' => $baseDir . '/../lib/Settings/Personal.php',
     'OCA\\Theming\\Settings\\PersonalSection' => $baseDir . '/../lib/Settings/PersonalSection.php',
