@@ -35,11 +35,13 @@ class AdminLegalUrlsTest extends TestCase {
 
 	public function testGetForm(): void {
 		$this->config
-			->expects($this->exactly(2))
+			->expects($this->exactly(4))
 			->method('getAppValue')
 			->willReturnMap([
 				['theming', 'imprintUrl', '', 'https://example.com/legal'],
+				['theming', 'imprintUrlDefault', '', 'https://default.example.com/legal'],
 				['theming', 'privacyUrl', '', 'https://example.com/privacy'],
+				['theming', 'privacyUrlDefault', '', 'https://default.example.com/privacy'],
 			]);
 
 		$this->initialState
@@ -47,7 +49,9 @@ class AdminLegalUrlsTest extends TestCase {
 			->method('provideInitialState')
 			->with('adminLegalUrlsParameters', [
 				'legalNoticeUrl' => 'https://example.com/legal',
+				'legalNoticeUrlDefault' => 'https://default.example.com/legal',
 				'privacyPolicyUrl' => 'https://example.com/privacy',
+				'privacyPolicyUrlDefault' => 'https://default.example.com/privacy',
 			]);
 
 		$expected = new TemplateResponse('theming', 'settings-admin-legal');

@@ -25,7 +25,9 @@ class AdminLegalUrls implements IDelegatedSettings {
 	public function getForm(): TemplateResponse {
 		$this->initialState->provideInitialState('adminLegalUrlsParameters', [
 			'legalNoticeUrl' => $this->config->getAppValue('theming', 'imprintUrl', ''),
+			'legalNoticeUrlDefault' => $this->config->getAppValue('theming', 'imprintUrlDefault', ''),
 			'privacyPolicyUrl' => $this->config->getAppValue('theming', 'privacyUrl', ''),
+			'privacyPolicyUrlDefault' => $this->config->getAppValue('theming', 'privacyUrlDefault', ''),
 		]);
 
 		Util::addScript($this->appName, 'admin-legal-urls');
