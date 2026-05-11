@@ -101,11 +101,19 @@ class ThemingDefaults extends \OC_Defaults {
 	}
 
 	public function getImprintUrl() {
-		return (string)$this->config->getAppValue('theming', 'imprintUrl', '');
+		$userValue = (string)$this->config->getAppValue('theming', 'imprintUrl', '');
+		if ($userValue !== '') {
+			return $userValue;
+		}
+		return (string)$this->config->getAppValue('theming', 'imprintUrlDefault', '');
 	}
 
 	public function getPrivacyUrl() {
-		return (string)$this->config->getAppValue('theming', 'privacyUrl', '');
+		$userValue = (string)$this->config->getAppValue('theming', 'privacyUrl', '');
+		if ($userValue !== '') {
+			return $userValue;
+		}
+		return (string)$this->config->getAppValue('theming', 'privacyUrlDefault', '');
 	}
 
 	public function getDocBaseUrl() {

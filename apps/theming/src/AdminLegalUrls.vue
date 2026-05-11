@@ -29,14 +29,16 @@ import TextField from './components/admin/TextField.vue'
 
 const {
 	legalNoticeUrl,
+	legalNoticeUrlDefault,
 	privacyPolicyUrl,
+	privacyPolicyUrlDefault,
 } = loadState('theming', 'adminLegalUrlsParameters')
 
 const legalFields = [
 	{
 		name: 'imprintUrl',
 		value: legalNoticeUrl,
-		defaultValue: '',
+		defaultValue: legalNoticeUrlDefault,
 		type: 'url',
 		displayName: t('theming', 'Legal notice link'),
 		placeholder: 'https://…',
@@ -45,7 +47,7 @@ const legalFields = [
 	{
 		name: 'privacyUrl',
 		value: privacyPolicyUrl,
-		defaultValue: '',
+		defaultValue: privacyPolicyUrlDefault,
 		type: 'url',
 		displayName: t('theming', 'Privacy policy link'),
 		placeholder: 'https://…',
