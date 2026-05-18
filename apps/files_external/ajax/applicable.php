@@ -1,7 +1,10 @@
 <?php
 
+use OC\Settings\AuthorizedGroupMapper;
+use OCA\Files_External\Settings\Admin;
 use OCP\IGroupManager;
 use OCP\IUserManager;
+use OCP\IUserSession;
 use OCP\Server;
 
 /**
@@ -12,17 +15,23 @@ use OCP\Server;
 \OC_JSON::checkAppEnabled('files_external');
 \OC_JSON::callCheck();
 
-$currentUser = \OC::$server->getUserSession()->getUser();
+$emitJson = static function (int $status, array $payload): void {
+	http_response_code($status);
+	header('Content-Type: application/json; charset=utf-8');
+	echo json_encode($payload);
+};
+
+$currentUser = Server::get(IUserSession::class)->getUser();
 if ($currentUser === null) {
-	\OC_JSON::error(['message' => 'Not logged in']);
+	$emitJson(401, ['status' => 'error', 'data' => ['message' => 'Not logged in']]);
 	exit();
 }
-$groupManager = \OC::$server->getGroupManager();
-$authorizedGroupMapper = \OC::$server->get(\OC\Settings\AuthorizedGroupMapper::class);
+$groupManager = Server::get(IGroupManager::class);
+$authorizedGroupMapper = Server::get(AuthorizedGroupMapper::class);
 $isAdmin = $groupManager->isAdmin($currentUser->getUID());
-$isDelegated = in_array(\OCA\Files_External\Settings\Admin::class, $authorizedGroupMapper->findAllClassesForUser($currentUser), true);
+$isDelegated = in_array(Admin::class, $authorizedGroupMapper->findAllClassesForUser($currentUser), true);
 if (!$isAdmin && !$isDelegated) {
-	\OC_JSON::error(['message' => 'Not authorized']);
+	$emitJson(403, ['status' => 'error', 'data' => ['message' => 'Not authorized']]);
 	exit();
 }
 
@@ -40,7 +49,7 @@ if (isset($_GET['offset'])) {
 }
 
 $groups = [];
-foreach (Server::get(IGroupManager::class)->search($pattern, $limit, $offset) as $group) {
+foreach ($groupManager->search($pattern, $limit, $offset) as $group) {
 	$groups[$group->getGID()] = $group->getDisplayName();
 }
 
@@ -51,4 +60,4 @@ foreach (Server::get(IUserManager::class)->searchDisplayName($pattern, $limit, $
 
 $results = ['groups' => $groups, 'users' => $users];
 
-\OC_JSON::success($results);
+$emitJson(200, ['status' => 'success', 'data' => $results]);
