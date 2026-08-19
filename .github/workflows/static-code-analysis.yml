@@ -239,6 +239,21 @@ jobs:
             --report=psalm-taint-results.sarif
         continue-on-error: true
 
+      - name: Fix invalid region values in SARIF
+        if: always() && hashFiles(format('apps-external/{0}/psalm-taint-results.sarif', matrix.app)) != ''
+        working-directory: apps-external/${{ matrix.app }}
+        run: |
+          jq '[
+            "startLine", "startColumn", "endLine", "endColumn"
+          ] as $fields |
+          walk(
+            if type == "object" then
+              reduce $fields[] as $f (.; if has($f) and ("number" == (.[$f] | type)) and .[$f] < 1 then .[$f] = 1 else . end)
+            else . end
+          )' \
+            psalm-taint-results.sarif > psalm-taint-results.sarif.tmp \
+            && mv psalm-taint-results.sarif.tmp psalm-taint-results.sarif
+
       - name: Upload SARIF to GitHub Security tab
         if: always() && hashFiles(format('apps-external/{0}/psalm-taint-results.sarif', matrix.app)) != ''
         uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3
