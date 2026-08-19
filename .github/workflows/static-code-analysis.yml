@@ -9,6 +9,8 @@ on:
       - main
       - master
       - stable*
+      - kh/dev/static-analysis
+      - 'rc/**'
     paths:
       - '.github/workflows/static-code-analysis.yml'
       - '**.php'
@@ -144,3 +146,102 @@ jobs:
 
       - name: Psalm
         run: composer run psalm:ncu -- --threads=1 --monochrome --no-progress --output-format=github
+
+  # IONOS: Discover apps-external submodules that have psalm.xml for SAST matrix.
+  generate-sast-matrix:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Discover apps with psalm.xml
+        id: set-matrix
+        run: |
+          apps=$(find apps-external -maxdepth 2 -name psalm.xml \
+            | sed 's|apps-external/||;s|/psalm.xml||' \
+            | sort | jq -R . | jq -sc .)
+          echo "matrix=$apps" >> "$GITHUB_OUTPUT"
+
+  # IONOS: Psalm taint analysis (security) for all apps-external submodules.
+  # Runs per-app in a matrix so each app uses its own psalm.xml and vendor.
+  # Non-blocking (continue-on-error) while baseline findings exist in upstream apps.
+  static-code-analysis-security-apps:
+    runs-on: ubuntu-latest
+    name: Psalm taint analysis - ${{ matrix.app }}
+    needs: generate-sast-matrix
+
+    permissions:
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.generate-sast-matrix.outputs.matrix) }}
+
+    # Allow upstream apps to have findings without blocking the pipeline.
+    # Remove continue-on-error once all apps are clean or baselined.
+    continue-on-error: true
+
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@cf4cade2721270509d5b1c766ab3549210a39a2a #v2.33.0
+        with:
+          php-version: '8.1'
+          extensions: ctype,curl,dom,fileinfo,gd,imagick,intl,json,mbstring,openssl,pdo_sqlite,posix,sqlite,xml,zip
+          coverage: none
+
+      - name: Composer install
+        working-directory: apps-external/${{ matrix.app }}
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Locate psalm binary
+        id: psalm-bin
+        working-directory: apps-external/${{ matrix.app }}
+        run: |
+          if [ -f vendor/bin/psalm ]; then
+            echo "bin=vendor/bin/psalm" >> "$GITHUB_OUTPUT"
+          elif [ -f vendor/bin/psalm.phar ]; then
+            echo "bin=vendor/bin/psalm.phar" >> "$GITHUB_OUTPUT"
+          elif [ -f vendor-bin/psalm/vendor/bin/psalm ]; then
+            echo "bin=vendor-bin/psalm/vendor/bin/psalm" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Psalm binary not found in apps-external/${{ matrix.app }} after composer install"
+            exit 1
+          fi
+
+      - name: Psalm taint analysis
+        working-directory: apps-external/${{ matrix.app }}
+        run: |
+          ${{ steps.psalm-bin.outputs.bin }} \
+            --taint-analysis \
+            --no-cache \
+            --threads=1 \
+            --monochrome \
+            --no-progress \
+            --output-format=github \
+            --report=psalm-taint-results.sarif
+        continue-on-error: true
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always() && hashFiles(format('apps-external/{0}/psalm-taint-results.sarif', matrix.app)) != ''
+        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3
+        with:
+          sarif_file: apps-external/${{ matrix.app }}/psalm-taint-results.sarif
+          category: psalm-taint-${{ matrix.app }}
