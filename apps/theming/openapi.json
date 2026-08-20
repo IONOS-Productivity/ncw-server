@@ -451,16 +451,6 @@
                             }
                         }
                     },
-                    "404": {
-                        "description": "Favicon not found",
-                        "content": {
-                            "text/html": {
-                                "schema": {
-                                    "type": "string"
-                                }
-                            }
-                        }
-                    },
                     "500": {
                         "description": "",
                         "content": {
@@ -510,22 +500,6 @@
                                 "schema": {
                                     "type": "string",
                                     "format": "binary"
-                                }
-                            },
-                            "*/*": {
-                                "schema": {
-                                    "type": "string",
-                                    "format": "binary"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Touch icon not found",
-                        "content": {
-                            "text/html": {
-                                "schema": {
-                                    "type": "string"
                                 }
                             }
                         }
