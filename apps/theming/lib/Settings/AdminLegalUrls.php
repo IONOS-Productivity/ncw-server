@@ -6,9 +6,10 @@
  */
 namespace OCA\Theming\Settings;
 
+use OCA\Theming\ConfigLexicon;
 use OCP\AppFramework\Http\TemplateResponse;
+use OCP\AppFramework\Services\IAppConfig;
 use OCP\AppFramework\Services\IInitialState;
-use OCP\IConfig;
 use OCP\IL10N;
 use OCP\Settings\IDelegatedSettings;
 use OCP\Util;
@@ -17,7 +18,7 @@ class AdminLegalUrls implements IDelegatedSettings {
 
 	public function __construct(
 		private string $appName,
-		private IConfig $config,
+		private IAppConfig $appConfig,
 		private IL10N $l,
 		private IInitialState $initialState,
 	) {
@@ -25,10 +26,10 @@ class AdminLegalUrls implements IDelegatedSettings {
 
 	public function getForm(): TemplateResponse {
 		$this->initialState->provideInitialState('adminLegalUrlsParameters', [
-			'legalNoticeUrl' => $this->config->getAppValue('theming', 'imprintUrl', ''),
-			'legalNoticeUrlDefault' => $this->config->getAppValue('theming', 'imprintUrlDefault', ''),
-			'privacyPolicyUrl' => $this->config->getAppValue('theming', 'privacyUrl', ''),
-			'privacyPolicyUrlDefault' => $this->config->getAppValue('theming', 'privacyUrlDefault', ''),
+			'legalNoticeUrl' => $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_IMPRINT_URL, ''),
+			'legalNoticeUrlDefault' => $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_IMPRINT_URL_DEFAULT, ''),
+			'privacyPolicyUrl' => $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_PRIVACY_URL, ''),
+			'privacyPolicyUrlDefault' => $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_PRIVACY_URL_DEFAULT, ''),
 		]);
 
 		Util::addScript($this->appName, 'admin-legal-urls');

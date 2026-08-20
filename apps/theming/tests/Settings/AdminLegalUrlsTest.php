@@ -9,40 +9,40 @@ namespace OCA\Theming\Tests\Settings;
 use OCA\Theming\AppInfo\Application;
 use OCA\Theming\Settings\AdminLegalUrls;
 use OCP\AppFramework\Http\TemplateResponse;
+use OCP\AppFramework\Services\IAppConfig;
 use OCP\AppFramework\Services\IInitialState;
-use OCP\IConfig;
 use OCP\IL10N;
 use Test\TestCase;
 
 class AdminLegalUrlsTest extends TestCase {
 	private AdminLegalUrls $adminLegalUrls;
-	private IConfig $config;
+	private IAppConfig $appConfig;
 	private IL10N $l10n;
 	private IInitialState $initialState;
 
 	protected function setUp(): void {
 		parent::setUp();
-		$this->config = $this->createMock(IConfig::class);
+		$this->appConfig = $this->createMock(IAppConfig::class);
 		$this->l10n = $this->createMock(IL10N::class);
 		$this->initialState = $this->createMock(IInitialState::class);
 
 		$this->adminLegalUrls = new AdminLegalUrls(
 			Application::APP_ID,
-			$this->config,
+			$this->appConfig,
 			$this->l10n,
 			$this->initialState,
 		);
 	}
 
 	public function testGetForm(): void {
-		$this->config
+		$this->appConfig
 			->expects($this->exactly(4))
-			->method('getAppValue')
+			->method('getAppValueString')
 			->willReturnMap([
-				['theming', 'imprintUrl', '', 'https://example.com/legal'],
-				['theming', 'imprintUrlDefault', '', 'https://default.example.com/legal'],
-				['theming', 'privacyUrl', '', 'https://example.com/privacy'],
-				['theming', 'privacyUrlDefault', '', 'https://default.example.com/privacy'],
+				['imprintUrl', '', false, 'https://example.com/legal'],
+				['imprintUrlDefault', '', false, 'https://default.example.com/legal'],
+				['privacyUrl', '', false, 'https://example.com/privacy'],
+				['privacyUrlDefault', '', false, 'https://default.example.com/privacy'],
 			]);
 
 		$this->initialState
