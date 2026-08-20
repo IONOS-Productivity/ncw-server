@@ -1,0 +1,232 @@
+# SPDX-FileCopyrightText: 2025 IONOS SE and contributors
+# SPDX-License-Identifier: MIT
+
+name: Backport
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  backport:
+    runs-on: ubuntu-latest
+
+    # Only run when the PR was actually merged and has backport labels
+    if: >
+      github.event.pull_request.merged == true &&
+      contains(toJson(github.event.pull_request.labels), '"backport ')
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # We parse labels dynamically in a prior step; this matrix is populated
+        # via a separate job that outputs the list.
+        label: ${{ fromJson(needs.collect-labels.outputs.labels) }}
+
+    needs: collect-labels
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          token: ${{ secrets.COMMAND_BOT_PAT }}
+          fetch-depth: 0
+
+      - name: Setup git identity
+        run: |
+          git config user.name 'nextcloud-command'
+          git config user.email 'nextcloud-command@users.noreply.github.com'
+
+      - name: Determine branches
+        id: branches
+        env:
+          BACKPORT_PREFIX: ${{ vars.BACKPORT_PREFIX || 'ncw-' }}
+        run: |
+          LABEL="${{ matrix.label }}"
+          # Strip "backport " prefix from label → target (e.g. "ncw-6")
+          TARGET="${LABEL#backport }"
+          BASE_BRANCH="rc/${TARGET}"
+          BACKPORT_BRANCH="backport/${{ github.event.pull_request.number }}/${TARGET}"
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+          echo "base_branch=$BASE_BRANCH" >> $GITHUB_OUTPUT
+          echo "backport_branch=$BACKPORT_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Verify target branch exists
+        id: verify
+        run: |
+          BASE_BRANCH="${{ steps.branches.outputs.base_branch }}"
+          if ! git ls-remote --exit-code --heads origin "$BASE_BRANCH" > /dev/null 2>&1; then
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Branch '$BASE_BRANCH' does not exist."
+          else
+            echo "exists=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment if target branch missing
+        if: steps.verify.outputs.exists == 'false'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.COMMAND_BOT_PAT }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.pull_request.number }},
+              body: `❌ Backport to \`${{ steps.branches.outputs.base_branch }}\` failed: branch does not exist.`,
+            })
+
+      - name: Create backport branch and cherry-pick
+        id: cherry-pick
+        if: steps.verify.outputs.exists == 'true'
+        run: |
+          BASE_BRANCH="${{ steps.branches.outputs.base_branch }}"
+          BACKPORT_BRANCH="${{ steps.branches.outputs.backport_branch }}"
+          MERGE_COMMIT="${{ github.event.pull_request.merge_commit_sha }}"
+
+          git fetch origin "$BASE_BRANCH" "${{ github.event.pull_request.base.ref }}"
+          git checkout -b "$BACKPORT_BRANCH" "origin/$BASE_BRANCH"
+
+          # Cherry-pick all commits from the PR (excluding the merge commit itself)
+          COMMITS=$(git log --reverse --pretty=format:"%H" \
+            "origin/${{ github.event.pull_request.base.ref }}..${{ github.event.pull_request.head.sha }}")
+
+          if [ -z "$COMMITS" ]; then
+            # Fallback: cherry-pick the merge commit
+            git cherry-pick -x "$MERGE_COMMIT"
+          else
+            echo "$COMMITS" | xargs git cherry-pick -x
+          fi
+
+          git push origin "$BACKPORT_BRANCH"
+
+      - name: Create backport PR
+        id: create-pr
+        if: steps.cherry-pick.outcome == 'success'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        with:
+          github-token: ${{ secrets.COMMAND_BOT_PAT }}
+          script: |
+            const target = '${{ steps.branches.outputs.target }}'
+            const baseBranch = '${{ steps.branches.outputs.base_branch }}'
+            const backportBranch = '${{ steps.branches.outputs.backport_branch }}'
+            const originalTitle = process.env.PR_TITLE
+            const originalNumber = ${{ github.event.pull_request.number }}
+            const originalAuthor = process.env.PR_AUTHOR
+
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[backport ${target}] ${originalTitle}`,
+              head: backportBranch,
+              base: baseBranch,
+              body: `Backport of #${originalNumber} to \`${baseBranch}\`.\n\nOriginal PR by @${originalAuthor}.`,
+            })
+
+            core.setOutput('pr_url', pr.html_url)
+            return pr.number
+
+      - name: Remove backport label
+        if: steps.create-pr.outcome == 'success'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          MATRIX_LABEL: ${{ matrix.label }}
+        with:
+          github-token: ${{ secrets.COMMAND_BOT_PAT }}
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: ${{ github.event.pull_request.number }},
+                name: process.env.MATRIX_LABEL,
+              })
+            } catch (e) {
+              // Label already removed or not found — ignore
+            }
+
+      - name: React thumbs up on backport comment
+        if: steps.create-pr.outcome == 'success'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.COMMAND_BOT_PAT }}
+          script: |
+            const target = '${{ steps.branches.outputs.target }}'
+            // Find the /backport comment for this target and react
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.pull_request.number }},
+            })
+            const backportComment = comments.data.find(c =>
+              c.body.trim().startsWith(`/backport ${target}`)
+            )
+            if (backportComment) {
+              await github.rest.reactions.createForIssueComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: backportComment.id,
+                content: '+1',
+              })
+            }
+
+      - name: React thumbs down and comment on failure
+        if: always() && steps.verify.outputs.exists == 'true' && (steps.cherry-pick.outcome == 'failure' || steps.create-pr.outcome == 'failure')
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.COMMAND_BOT_PAT }}
+          script: |
+            const target = '${{ steps.branches.outputs.target }}'
+            const baseBranch = '${{ steps.branches.outputs.base_branch }}'
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+
+            // Comment failure details on the PR
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.pull_request.number }},
+              body: `❌ Backport to \`${baseBranch}\` failed (likely a cherry-pick conflict). [View run](${runUrl})\n\nPlease backport manually.`,
+            })
+
+            // React -1 on the /backport comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.pull_request.number }},
+            })
+            const backportComment = comments.data.find(c =>
+              c.body.trim().startsWith(`/backport ${target}`)
+            )
+            if (backportComment) {
+              await github.rest.reactions.createForIssueComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: backportComment.id,
+                content: '-1',
+              })
+            }
+
+  collect-labels:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.pull_request.merged == true &&
+      contains(toJson(github.event.pull_request.labels), '"backport ')
+    outputs:
+      labels: ${{ steps.collect.outputs.labels }}
+
+    steps:
+      - name: Collect backport labels
+        id: collect
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels
+              .map(l => l.name)
+              .filter(name => name.startsWith('backport '))
+            core.setOutput('labels', JSON.stringify(labels))
+            return labels
