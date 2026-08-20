@@ -1,3 +1,7 @@
+/*
+ * SPDX-FileCopyrightText: 2026 STRATO GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
 div.app-talk.content {
 	.messages-group__date-text, li.message.message--hovered .message-body.normal-message-body {
 		background-color: var(--ion-surface-secondary);

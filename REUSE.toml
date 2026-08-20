@@ -404,3 +404,24 @@ path = ["openapi.json", ".envrc", "flake.nix", "flake.lock"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025 Nextcloud GmbH and Nextcloud contributors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# IONOS Nextcloud Workspace theme assets (NSW-944)
+[[annotations]]
+path = ["apps/theming/fonts/OpenSans/OpenSans-*-webfont.eot", "apps/theming/fonts/OpenSans/OpenSans-*-webfont.svg", "apps/theming/fonts/OpenSans/OpenSans-*-webfont.ttf", "apps/theming/fonts/OpenSans/OpenSans-*-webfont.woff", "apps/theming/fonts/OpenSans/OpenSans-*-webfont.woff2"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2010-2011 Steve Matteson"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["apps/theming/img/favicon.ico", "apps/theming/img/favicon.png", "apps/theming/img/favicon.svg", "apps/theming/img/favicon-touch.png", "apps/theming/img/favicon-touch.svg", "apps/theming/img/ionos.jpg"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 STRATO GmbH"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Overrides the upstream NextcloudTrademarks annotation: these two files carry the
+# IONOS logo on this fork, not the Nextcloud one.
+[[annotations]]
+path = ["core/img/logo/logo.png", "core/img/logo/logo.svg"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 STRATO GmbH"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

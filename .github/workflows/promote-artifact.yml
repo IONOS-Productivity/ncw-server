@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 STRATO GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 name: Promote QA-approved artifacts to stable branch
 
 # - Takes a commit SHA as input

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 STRATO GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 name: 'Get Job Data from GitHub Actions'
 description: 'Fetches the GitHub Actions job data from the GitHub API'
 inputs:
