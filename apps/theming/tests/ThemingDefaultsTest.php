@@ -188,23 +188,47 @@ class ThemingDefaultsTest extends TestCase {
 	#[\PHPUnit\Framework\Attributes\DataProvider('legalUrlProvider')]
 	public function testGetImprintURL(string $imprintUrl): void {
 		$this->appConfig
-			->expects($this->once())
 			->method('getAppValueString')
-			->with('imprintUrl', '')
-			->willReturn($imprintUrl);
+			->willReturnMap([
+				['imprintUrl', '', $imprintUrl],
+				['imprintUrlDefault', '', ''],
+			]);
 
 		$this->assertEquals($imprintUrl, $this->template->getImprintUrl());
+	}
+
+	public function testGetImprintURLFallsBackToDeploymentDefault(): void {
+		$this->appConfig
+			->method('getAppValueString')
+			->willReturnMap([
+				['imprintUrl', '', ''],
+				['imprintUrlDefault', '', 'https://example.com/deployment-legal'],
+			]);
+
+		$this->assertEquals('https://example.com/deployment-legal', $this->template->getImprintUrl());
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider('legalUrlProvider')]
 	public function testGetPrivacyURL(string $privacyUrl): void {
 		$this->appConfig
-			->expects($this->once())
 			->method('getAppValueString')
-			->with('privacyUrl', '')
-			->willReturn($privacyUrl);
+			->willReturnMap([
+				['privacyUrl', '', $privacyUrl],
+				['privacyUrlDefault', '', ''],
+			]);
 
 		$this->assertEquals($privacyUrl, $this->template->getPrivacyUrl());
+	}
+
+	public function testGetPrivacyURLFallsBackToDeploymentDefault(): void {
+		$this->appConfig
+			->method('getAppValueString')
+			->willReturnMap([
+				['privacyUrl', '', ''],
+				['privacyUrlDefault', '', 'https://example.com/deployment-privacy'],
+			]);
+
+		$this->assertEquals('https://example.com/deployment-privacy', $this->template->getPrivacyUrl());
 	}
 
 	public function testGetSloganWithDefault(): void {
@@ -229,13 +253,14 @@ class ThemingDefaultsTest extends TestCase {
 
 	public function testGetShortFooter(): void {
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
 				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -245,13 +270,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterEmptyUrl(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), ''],
 				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -261,13 +287,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterEmptySlogan(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
 				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), ''],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -277,13 +304,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterImprint(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
 				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', 'https://example.com/imprint'],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -298,13 +326,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterPrivacy(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
 				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', 'https://example.com/privacy'],
 			]);
 
@@ -319,13 +348,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterAllLegalLinks(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
 				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', 'https://example.com/imprint'],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', 'https://example.com/privacy'],
 			]);
 
@@ -348,13 +378,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterInvalidImprint(string $invalidImprintUrl): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
 				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', $invalidImprintUrl],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -365,13 +396,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterInvalidPrivacy(string $invalidPrivacyUrl): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
 				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', $invalidPrivacyUrl],
 			]);
 
@@ -689,7 +721,9 @@ class ThemingDefaultsTest extends TestCase {
 			->expects($this->any())
 			->method('getAppValueString')
 			->willReturnMap([
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 				['logoMime', '', 'jpeg'],
 				['backgroundMime', '', 'jpeg'],

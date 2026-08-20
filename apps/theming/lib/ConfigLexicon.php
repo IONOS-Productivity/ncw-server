@@ -37,6 +37,10 @@ class ConfigLexicon implements ILexicon {
 	public const INSTANCE_IMPRINT_URL = 'imprintUrl';
 	/** Privacy URL of this instance */
 	public const INSTANCE_PRIVACY_URL = 'privacyUrl';
+	/** IONOS: deployment-provided imprint URL, used when the admin set none */
+	public const INSTANCE_IMPRINT_URL_DEFAULT = 'imprintUrlDefault';
+	/** IONOS: deployment-provided privacy URL, used when the admin set none */
+	public const INSTANCE_PRIVACY_URL_DEFAULT = 'privacyUrlDefault';
 
 	// legacy theming
 	/** Base URL of this instance */
@@ -100,6 +104,18 @@ class ConfigLexicon implements ILexicon {
 				ValueType::STRING,
 				defaultRaw: '',
 				definition: 'Privacy URL of this instance.',
+			),
+			new Entry(
+				self::INSTANCE_IMPRINT_URL_DEFAULT,
+				ValueType::STRING,
+				defaultRaw: '',
+				definition: 'Deployment-provided imprint URL, used when the admin set none (IONOS).',
+			),
+			new Entry(
+				self::INSTANCE_PRIVACY_URL_DEFAULT,
+				ValueType::STRING,
+				defaultRaw: '',
+				definition: 'Deployment-provided privacy URL, used when the admin set none (IONOS).',
 			),
 
 			// legacy theming

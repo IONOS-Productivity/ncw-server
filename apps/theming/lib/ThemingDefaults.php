@@ -102,11 +102,19 @@ class ThemingDefaults extends \OC_Defaults {
 	}
 
 	public function getImprintUrl(): string {
-		return $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_IMPRINT_URL, '');
+		$adminValue = $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_IMPRINT_URL, '');
+		if ($adminValue !== '') {
+			return $adminValue;
+		}
+		return $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_IMPRINT_URL_DEFAULT, '');
 	}
 
 	public function getPrivacyUrl(): string {
-		return $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_PRIVACY_URL, '');
+		$adminValue = $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_PRIVACY_URL, '');
+		if ($adminValue !== '') {
+			return $adminValue;
+		}
+		return $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_PRIVACY_URL_DEFAULT, '');
 	}
 
 	public function getDocBaseUrl(): string {
