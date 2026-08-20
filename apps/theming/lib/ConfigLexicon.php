@@ -24,6 +24,8 @@ class ConfigLexicon implements ILexicon {
 	/** The cache buster index */
 	public const CACHE_BUSTER = 'cachebuster';
 	public const USER_THEMING_DISABLED = 'disable-user-theming';
+	/** IONOS: whether the admin may customise theming from the web UI */
+	public const ADMIN_THEMING_DISABLED = 'disable_admin_theming';
 
 	/** Name of the software running on this instance (usually "Nextcloud") */
 	public const PRODUCT_NAME = 'productName';
@@ -60,6 +62,12 @@ class ConfigLexicon implements ILexicon {
 				ValueType::BOOL,
 				defaultRaw: false,
 				definition: 'Whether user theming is disabled.',
+			),
+			new Entry(
+				self::ADMIN_THEMING_DISABLED,
+				ValueType::BOOL,
+				defaultRaw: false,
+				definition: 'Whether admin theming customization is disabled (IONOS).',
 			),
 
 			// instance theming

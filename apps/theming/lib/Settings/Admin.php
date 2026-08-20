@@ -57,6 +57,9 @@ class Admin implements IDelegatedSettings {
 			'name' => $this->themingDefaults->getEntity(),
 			'url' => $this->themingDefaults->getBaseUrl(),
 			'slogan' => $this->themingDefaults->getSlogan(),
+			'defaultName' => (new \OC_Defaults())->getEntity(),
+			'defaultUrl' => (new \OC_Defaults())->getBaseUrl(),
+			'defaultSlogan' => (new \OC_Defaults())->getSlogan(),
 			'primaryColor' => $this->themingDefaults->getDefaultColorPrimary(),
 			'backgroundColor' => $this->themingDefaults->getDefaultColorBackground(),
 			'logoMime' => $this->config->getAppValue(Application::APP_ID, 'logoMime', ''),
@@ -73,6 +76,7 @@ class Admin implements IDelegatedSettings {
 			'docUrlIcons' => $this->urlGenerator->linkToDocs('admin-theming-icons'),
 			'canThemeIcons' => $this->imageManager->shouldReplaceIcons(),
 			'userThemingDisabled' => $this->themingDefaults->isUserThemingDisabled(),
+			'adminThemingDisabled' => $this->themingDefaults->isAdminThemingDisabled(),
 			'defaultApps' => $this->navigationManager->getDefaultEntryIds(),
 		]);
 
