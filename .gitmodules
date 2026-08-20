@@ -4,3 +4,99 @@
 [submodule "3rdparty"]
 	path = 3rdparty
 	url = https://github.com/nextcloud/3rdparty.git
+[submodule "IONOS"]
+	path = IONOS
+	url = git@github.com:IONOS-Productivity/ncw-config.git
+[submodule "apps-external/richdocuments"]
+	path = apps-external/richdocuments
+	url = git@github.com:nextcloud/richdocuments.git
+[submodule "apps-external/viewer"]
+	path = apps-external/viewer
+	url = git@github.com:nextcloud/viewer.git
+[submodule "apps-external/contacts"]
+	path = apps-external/contacts
+	url = git@github.com:nextcloud/contacts.git
+[submodule "apps-external/calendar"]
+	path = apps-external/calendar
+	url = git@github.com:nextcloud/calendar.git
+[submodule "apps-external/notify_push"]
+	path = apps-external/notify_push
+	url = git@github.com:nextcloud/notify_push.git
+[submodule "apps-external/activity"]
+	path = apps-external/activity
+	url = git@github.com:IONOS-Productivity/nc-activity.git
+[submodule "apps-external/tasks"]
+	path = apps-external/tasks
+	url = git@github.com:nextcloud/tasks.git
+[submodule "apps-external/spreed"]
+	path = apps-external/spreed
+	url = git@github.com:nextcloud/spreed.git
+[submodule "apps-external/mail"]
+	path = apps-external/mail
+	url = git@github.com:IONOS-Productivity/ncw-mail.git
+[submodule "apps-external/ncw_apps_menu"]
+	path = apps-external/ncw_apps_menu
+	url = git@github.com:IONOS-Productivity/ncw-apps-menu.git
+[submodule "apps-external/ncw_mailtemplate"]
+	path = apps-external/ncw_mailtemplate
+	url = git@github.com:IONOS-Productivity/ncw-mailtemplate.git
+[submodule "apps-external/groupfolders"]
+	path = apps-external/groupfolders
+	url = git@github.com:nextcloud/groupfolders.git
+[submodule "apps-external/notes"]
+	path = apps-external/notes
+	url = git@github.com:nextcloud/notes.git
+[submodule "apps-external/deck"]
+	path = apps-external/deck
+	url = git@github.com:nextcloud/deck.git
+[submodule "apps-external/forms"]
+	path = apps-external/forms
+	url = git@github.com:IONOS-Productivity/nc-forms.git
+[submodule "apps-external/text"]
+	path = apps-external/text
+	url = git@github.com:nextcloud/text.git
+[submodule "apps-external/whiteboard"]
+	path = apps-external/whiteboard
+	url = git@github.com:nextcloud/whiteboard.git
+[submodule "apps-external/circles"]
+	path = apps-external/circles
+	url = git@github.com:nextcloud/circles.git
+[submodule "apps-external/assistant"]
+	path = apps-external/assistant
+	url = git@github.com:IONOS-Productivity/nc-assistant.git
+[submodule "apps-external/integration_openai"]
+	path = apps-external/integration_openai
+	url = git@github.com:nextcloud/integration_openai.git
+[submodule "apps-external/collectives"]
+	path = apps-external/collectives
+	url = git@github.com:nextcloud/collectives.git
+[submodule "apps-external/password_policy"]
+	path = apps-external/password_policy
+	url = git@github.com:IONOS-Productivity/nc-password_policy.git
+[submodule "apps-external/tables"]
+	path = apps-external/tables
+	url = git@github.com:nextcloud/tables.git
+[submodule "apps-external/notifications"]
+	path = apps-external/notifications
+	url = git@github.com:IONOS-Productivity/nc-notifications.git
+[submodule "apps-external/user_oidc"]
+	path = apps-external/user_oidc
+	url = git@github.com:IONOS-Productivity/nc-user_oidc.git
+[submodule "apps-external/end_to_end_encryption"]
+	path = apps-external/end_to_end_encryption
+	url = git@github.com:nextcloud/end_to_end_encryption.git
+[submodule "apps-external/twofactor_totp"]
+	path = apps-external/twofactor_totp
+	url = git@github.com:nextcloud/twofactor_totp.git
+[submodule "apps-external/ncw_tools"]
+	path = apps-external/ncw_tools
+	url = git@github.com:IONOS-Productivity/ncw-tools.git
+[submodule "apps-external/files_pdfviewer"]
+	path = apps-external/files_pdfviewer
+	url = git@github.com:nextcloud/files_pdfviewer.git
+[submodule "apps-external/bruteforcesettings"]
+	path = apps-external/bruteforcesettings
+	url = git@github.com:IONOS-Productivity/nc-bruteforcesettings.git
+[submodule "apps-external/user_saml"]
+	path = apps-external/user_saml
+	url = git@github.com:IONOS-Productivity/nc-user_saml.git
