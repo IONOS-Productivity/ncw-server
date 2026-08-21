@@ -28,7 +28,16 @@ on:
       - '**.vue'
       - '.gitmodules'
   push:
+    # One converged list, identical on every branch. GitHub evaluates this block
+    # from the pushed branch's own copy, so the list must cover every live lane:
+    # the per-major globs, the legacy unsuffixed lanes (retired later), the trains
+    # in both naming eras, and user dev branches.
+    #
+    # Keeping the unsuffixed entries is load-bearing: `ionos-dev` does not match
+    # `ionos-dev-v*`, so dropping them would leave the v31 lane dark.
     branches:
+      - 'ionos-dev-v*'
+      - 'ionos-stable-v*'
       - ionos-dev
       - ionos-stable
       - 'rc/**'
@@ -51,13 +60,19 @@ on:
         type: string
         default: ''
 
+# Protected lanes (ionos-dev*/ionos-stable*/rc/*) use a unique-per-run-id key so
+# consecutive pushes never cancel each other. Matched by prefix, not by exact ref:
+# an exact list does not match a per-major lane, which would fall through to the
+# ref-keyed branch below and make consecutive pushes to ionos-dev-v<N> cancel each
+# other. Everything else stays ref-keyed, so a new push supersedes a running one.
 concurrency:
   group: >-
     ${{ github.workflow }}-${{
       github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) ||
       (
         (
-          contains(fromJson('["refs/heads/ionos-dev","refs/heads/ionos-stable"]'), github.ref) ||
+          startsWith(github.ref, 'refs/heads/ionos-dev') ||
+          startsWith(github.ref, 'refs/heads/ionos-stable') ||
           startsWith(github.ref, 'refs/heads/rc/')
         ) && github.run_id ||
         github.ref
@@ -103,6 +118,64 @@ jobs:
         with:
           submodules: true
           fetch-depth: 1  # Shallow clone - only need current submodule SHAs for cache detection
+
+      # Runs in the earliest job, right after checkout, so a mismatched lane fails in
+      # seconds instead of after a full build. Only lanes whose *name* encodes a major
+      # are checked: ionos-dev-v<N>, ionos-stable-v<N> and rc/ncw-v<N>-<rc>. The
+      # unsuffixed lanes and */dev/* carry no major to compare against and are skipped.
+      #
+      # The RC product prefix is 'ncw' — rc/ncw-v32-1, tracked as NCW-v32-1. A wrong prefix
+      # makes the assertion silently skip every RC branch and still look green, so RC refs
+      # that do not match the convention warn rather than pass quietly.
+      #
+      # This is the guard that has to exist before the deploy gate can safely be widened
+      # to the per-major lanes — without it, a lane can build one major and deploy under
+      # the name of another.
+      - name: Assert branch major matches version.php
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          BRANCH_MAJOR=''
+          case "$REF" in
+            ionos-dev-v[0-9]*)    BRANCH_MAJOR="${REF#ionos-dev-v}" ;;
+            ionos-stable-v[0-9]*) BRANCH_MAJOR="${REF#ionos-stable-v}" ;;
+            rc/ncw-v[0-9]*-*)     BRANCH_MAJOR="${REF#rc/ncw-v}"; BRANCH_MAJOR="${BRANCH_MAJOR%%-*}" ;;
+            # Arms below are ordered: anything carrying a second '-' segment but not the
+            # 'v<major>' shape is a near-miss (e.g. rc/ncw-32-1) and must warn, not be
+            # mistaken for the retired single-number form.
+            rc/ncw-*-*|rc/nsw-*-*)
+              echo "::warning::Branch '$REF' looks like an RC ref but does not match 'rc/ncw-v<major>-<rc>' — NC major could not be asserted."
+              exit 0 ;;
+            rc/ncw-[0-9]*|rc/nsw-[0-9]*)
+              echo "::notice::Branch '$REF' uses the retired RC naming (no major encoded) — assertion skipped."
+              exit 0 ;;
+            rc/*)
+              echo "::warning::Branch '$REF' does not match the RC convention 'rc/ncw-v<major>-<rc>' — NC major could not be asserted."
+              exit 0 ;;
+          esac
+
+          if [ -z "$BRANCH_MAJOR" ]; then
+            echo "::notice::Branch '$REF' encodes no NC major — assertion skipped."
+            exit 0
+          fi
+
+          # Parsed with sed rather than `php -r` so this does not depend on a PHP
+          # setup step having run. version.php line: $OC_Version = [32, 0, 14, 1];
+          FILE_MAJOR=$(sed -n 's/^\$OC_Version *= *\[ *\([0-9]\{1,\}\).*/\1/p' version.php)
+
+          if [ -z "$FILE_MAJOR" ]; then
+            echo "::error::Could not parse \$OC_Version from version.php."
+            exit 1
+          fi
+
+          if [ "$BRANCH_MAJOR" != "$FILE_MAJOR" ]; then
+            echo "::error::Branch '$REF' declares NC major $BRANCH_MAJOR but version.php says $FILE_MAJOR."
+            exit 1
+          fi
+
+          echo "✅ Branch '$REF' and version.php agree on NC major $FILE_MAJOR."
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y make jq
@@ -154,11 +227,12 @@ jobs:
               echo "   ✅ Event type is 'push'"
             fi
 
-            # Check if branch matches expected patterns: ionos-dev, ionos-stable, rc/* or */dev/*
-            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)$|^rc/.*$|^[^/]+/dev/.*$'
+            # Check if branch matches expected patterns: ionos-dev[-v<major>], ionos-stable[-v<major>], rc/* or */dev/*
+            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)(-v[0-9]+)?$|^rc/.*$|^[^/]+/dev/.*$'
+            VALID_BRANCH_DESC="'ionos-dev[-v<major>]', 'ionos-stable[-v<major>]', 'rc/*' or '*/dev/*'"
             if [[ ! "${{ github.ref_name }}" =~ $VALID_BRANCH_PATTERN ]]; then
-              echo "- ❌ Branch must be 'ionos-dev', 'ionos-stable', 'rc/*' or '*/dev/*' (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
-              echo "   ❌ Branch is '${{ github.ref_name }}' (must be 'ionos-dev', 'ionos-stable', 'rc/*' or '*/dev/*')"
+              echo "- ❌ Branch must be ${VALID_BRANCH_DESC} (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
+              echo "   ❌ Branch is '${{ github.ref_name }}' (must be ${VALID_BRANCH_DESC})"
               WILL_TRIGGER=false
             else
               echo "- ✅ Branch is '\`${{ github.ref_name }}\`'" >> $GITHUB_STEP_SUMMARY
@@ -711,10 +785,11 @@ jobs:
 
   upload-to-artifactory:
     runs-on: self-hosted
-    # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-stable|rc/*|*/dev/*" branch push defined in the on:push:branches *OR* on manual workflow_dispatch
+    # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-dev-v*|ionos-stable|ionos-stable-v*|rc/*|*/dev/*" branch push defined in the on:push:branches *OR* on manual workflow_dispatch
+    # The per-major lanes are matched by prefix so a new major (v33, v34, …) needs no edit here.
     if: |
       always() &&
-      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'rc/') || contains(github.ref_name, '/dev/')) &&
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref_name == 'ionos-dev' || startsWith(github.ref_name, 'ionos-dev-v') || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'ionos-stable-v') || startsWith(github.ref_name, 'rc/') || contains(github.ref_name, '/dev/')) &&
       needs.prepare-matrix.result == 'success' &&
       (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
       needs.build-artifact.result == 'success'
@@ -798,14 +873,20 @@ jobs:
           # |------------------|----------------|--------------------------------------------------------------------------------------------|
           # | Pull Request     | dev            | dev/pr/nextcloud-workspace-pr-<number>.zip                                                 |
           # | ionos-dev        | dev            | dev/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                         |
+          # | ionos-dev-v*     | dev            | dev/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip (ncVersion namespaces it) |
           # | ionos-stable     | stable         | stable/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                      |
+          # | ionos-stable-v*  | stable         | stable/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip (ncVersion namespaces it) |
           # | rc/*             | rc             | rc/<github.ref_name>/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip        |
           # | */dev/*          | dev-*          | dev-<prefix>/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                |
+          #
+          # The dev lanes need no arm: both ionos-dev and ionos-dev-v<N> fall through to the
+          # "dev" default. The stable arm must match the suffixed form explicitly, or a future
+          # ionos-stable-v<N> would silently publish into dev/.
 
           ARTIFACTORY_STAGE_PREFIX="dev"
 
           # Set stage prefix based on branch
-          if [ "${{ github.ref_name }}" == "ionos-stable" ]; then
+          if [[ "${{ github.ref_name }}" == "ionos-stable" || "${{ github.ref_name }}" == ionos-stable-v[0-9]* ]]; then
               ARTIFACTORY_STAGE_PREFIX="stable"
           # set ARTIFACTORY_STAGE_PREFIX=rc on rc/* branches
           elif [[ "${{ github.ref_name }}" =~ ^rc/.*$ ]]; then
@@ -968,6 +1049,20 @@ jobs:
     # Trigger remote build on "ionos-dev|ionos-stable|rc/*|*/dev/*" branch *push* defined in the on:push:branches
     # Can be disabled via repository variable 'DISABLE_REMOTE_TRIGGER' (set to 'true' to disable)
     # Configure at: https://github.com/IONOS-Productivity/ncw-server/settings/variables/actions
+    #
+    # NOTE (NSW-944): the per-major lanes — 'ionos-dev-v*' AND 'ionos-stable-v*' — are deliberately
+    # absent from the condition below while they DO appear in on:push:branches and in the
+    # upload-to-artifactory condition. That combination is the Nextcloud-major freeze: a per-major
+    # integration branch produces build artifacts you can pull with check_release.sh, but can never
+    # trigger a remote deploy.
+    #
+    # The arms below are exact equality on purpose. 'ionos-dev' does not match 'ionos-dev-v32', so
+    # the freeze holds for every future major without further edits — do not "tidy" these into
+    # startsWith(), which would silently start deploying the next major.
+    #
+    # Widen this only at a cutover, when the deployed major is meant to change. Doing so also
+    # requires widening the BUILD_TYPE stable arm further down, which is exact-match for the same
+    # reason; otherwise a newly-admitted ionos-stable-v<N> would deploy as BUILD_TYPE=dev.
     if: |
       always() &&
       github.event_name == 'push' &&
@@ -1042,16 +1137,29 @@ jobs:
           set -x
 
           # Branch to GitLab Trigger Mapping:
-          # | ref_name     | GITLAB_REF   | BUILD_TYPE  |
-          # |--------------|--------------|-------------|
-          # | ionos-dev    | main         | dev         |
-          # | ionos-stable | main         | stable      |
-          # | rc/*         | main         | rc          |
-          # | */dev/*      | main         | dev-*       |
+          # | ref_name         | GITLAB_REF   | BUILD_TYPE  |
+          # |------------------|--------------|-------------|
+          # | ionos-dev        | main         | dev         |
+          # | ionos-stable     | main         | stable      |
+          # | rc/*             | main         | rc          |
+          # | */dev/*          | main         | dev-*       |
+          #
+          # The per-major lanes — ionos-dev-v* and ionos-stable-v* — have no rows because they
+          # never reach this job: the if: condition above matches the unsuffixed names by exact
+          # equality. That is the freeze. Do not add speculative arms for them here; an
+          # unreachable arm reads as support that does not exist.
+          #
+          # GITLAB_REF stays 'main' for every lane and BUILD_TYPE keeps its existing values —
+          # both are consumed on the GitLab side, so changing either needs a coordinated change
+          # there first. NC_MAJOR below is additive and cannot break an existing consumer.
 
           BUILD_TYPE="dev"
 
-          # Override build type for stable branch
+          # Override build type for the stable branch. Exact match, deliberately unlike the
+          # upload job's stage-prefix arm, which does accept ionos-stable-v<N>: that job's gate
+          # admits the per-major lanes and this one does not. Widening the gate at a cutover
+          # must widen this arm in the same change, or a suffixed stable lane would deploy as
+          # BUILD_TYPE=dev.
           if [ "${{ github.ref_name }}" == "ionos-stable" ]; then
               BUILD_TYPE="stable"
           # Override build type for rc/* branches
@@ -1063,6 +1171,14 @@ jobs:
               BRANCH_PREFIX=$(echo "${{ github.ref_name }}" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
               BUILD_TYPE="dev-${BRANCH_PREFIX}"
           fi
+
+          # NC major, taken from NC_VERSION ("<major>.<minor>.<patch>.<rev>.<run>") rather than
+          # from the branch name — version.php is authoritative, and the unsuffixed lanes carry
+          # no major in their name at all. The two are already proven to agree: prepare-matrix
+          # asserts it for every lane whose name does encode a major.
+          NC_VERSION="${{ needs.build-artifact.outputs.NC_VERSION }}"
+          NC_MAJOR="${NC_VERSION%%.*}"
+          echo "NC_MAJOR: $NC_MAJOR"
 
           # Construct source build URL for traceability
           SOURCE_BUILD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -1088,6 +1204,7 @@ jobs:
               --form "variables[GITHUB_SHA]=${{ github.sha }}" \
               --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}" \
               --form "variables[NC_VERSION]=${{ needs.build-artifact.outputs.NC_VERSION }}" \
+              --form "variables[NC_MAJOR]=${NC_MAJOR}" \
               --form "variables[BUILD_ID]=${{ github.run_id }}" \
               --form "variables[BUILD_TYPE]=${BUILD_TYPE}" \
               --form "variables[SOURCE_BUILD_URL]=${SOURCE_BUILD_URL}" \
@@ -1299,7 +1416,7 @@ jobs:
             echo "| build-artifact | ${{ needs.build-artifact.result == 'success' && '✅' || needs.build-artifact.result == 'failure' && '❌' || needs.build-artifact.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.build-artifact.result }} |"
             echo "| upload-to-artifactory | ${{ needs.upload-to-artifactory.result == 'success' && '✅' || needs.upload-to-artifactory.result == 'failure' && '❌' || needs.upload-to-artifactory.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.upload-to-artifactory.result }} |"
             echo "| nextcloud-workspace-artifact-to-ghcr_io | ${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result == 'success' && '✅' || needs.nextcloud-workspace-artifact-to-ghcr_io.result == 'failure' && '❌' || needs.nextcloud-workspace-artifact-to-ghcr_io.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result }} |"
-            echo "| trigger-remote-dev-workflow | ${{ needs.trigger-remote-dev-workflow.result == 'success' && '✅' || needs.trigger-remote-dev-workflow.result == 'failure' && '❌' || needs.trigger-remote-dev_workflow.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.trigger-remote-dev-workflow.result }} |"
+            echo "| trigger-remote-dev-workflow | ${{ needs.trigger-remote-dev-workflow.result == 'success' && '✅' || needs.trigger-remote-dev-workflow.result == 'failure' && '❌' || needs.trigger-remote-dev-workflow.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.trigger-remote-dev-workflow.result }} |"
             echo ""
 
             if [ -n "$FAILED_JOBS" ]; then
