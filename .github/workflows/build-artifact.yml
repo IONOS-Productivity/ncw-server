@@ -119,6 +119,64 @@ jobs:
           submodules: true
           fetch-depth: 1  # Shallow clone - only need current submodule SHAs for cache detection
 
+      # Runs in the earliest job, right after checkout, so a mismatched lane fails in
+      # seconds instead of after a full build. Only lanes whose *name* encodes a major
+      # are checked: ionos-dev-v<N>, ionos-stable-v<N> and rc/ncw-v<N>-<rc>. The
+      # unsuffixed lanes and */dev/* carry no major to compare against and are skipped.
+      #
+      # The RC product prefix is 'ncw' — rc/ncw-v32-1, tracked as NCW-v32-1. A wrong prefix
+      # makes the assertion silently skip every RC branch and still look green, so RC refs
+      # that do not match the convention warn rather than pass quietly.
+      #
+      # This is the guard that has to exist before the deploy gate can safely be widened
+      # to the per-major lanes — without it, a lane can build one major and deploy under
+      # the name of another.
+      - name: Assert branch major matches version.php
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          BRANCH_MAJOR=''
+          case "$REF" in
+            ionos-dev-v[0-9]*)    BRANCH_MAJOR="${REF#ionos-dev-v}" ;;
+            ionos-stable-v[0-9]*) BRANCH_MAJOR="${REF#ionos-stable-v}" ;;
+            rc/ncw-v[0-9]*-*)     BRANCH_MAJOR="${REF#rc/ncw-v}"; BRANCH_MAJOR="${BRANCH_MAJOR%%-*}" ;;
+            # Arms below are ordered: anything carrying a second '-' segment but not the
+            # 'v<major>' shape is a near-miss (e.g. rc/ncw-32-1) and must warn, not be
+            # mistaken for the retired single-number form.
+            rc/ncw-*-*|rc/nsw-*-*)
+              echo "::warning::Branch '$REF' looks like an RC ref but does not match 'rc/ncw-v<major>-<rc>' — NC major could not be asserted."
+              exit 0 ;;
+            rc/ncw-[0-9]*|rc/nsw-[0-9]*)
+              echo "::notice::Branch '$REF' uses the retired RC naming (no major encoded) — assertion skipped."
+              exit 0 ;;
+            rc/*)
+              echo "::warning::Branch '$REF' does not match the RC convention 'rc/ncw-v<major>-<rc>' — NC major could not be asserted."
+              exit 0 ;;
+          esac
+
+          if [ -z "$BRANCH_MAJOR" ]; then
+            echo "::notice::Branch '$REF' encodes no NC major — assertion skipped."
+            exit 0
+          fi
+
+          # Parsed with sed rather than `php -r` so this does not depend on a PHP
+          # setup step having run. version.php line: $OC_Version = [32, 0, 14, 1];
+          FILE_MAJOR=$(sed -n 's/^\$OC_Version *= *\[ *\([0-9]\{1,\}\).*/\1/p' version.php)
+
+          if [ -z "$FILE_MAJOR" ]; then
+            echo "::error::Could not parse \$OC_Version from version.php."
+            exit 1
+          fi
+
+          if [ "$BRANCH_MAJOR" != "$FILE_MAJOR" ]; then
+            echo "::error::Branch '$REF' declares NC major $BRANCH_MAJOR but version.php says $FILE_MAJOR."
+            exit 1
+          fi
+
+          echo "✅ Branch '$REF' and version.php agree on NC major $FILE_MAJOR."
+
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y make jq
 
