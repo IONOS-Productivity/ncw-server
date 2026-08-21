@@ -228,7 +228,7 @@ jobs:
             fi
 
             # Check if branch matches expected patterns: ionos-dev, ionos-stable, rc/* or */dev/*
-            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)$|^rc/.*$|^[^/]+/dev/.*$'
+            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)(-v[0-9]+)?$|^rc/.*$|^[^/]+/dev/.*$'
             if [[ ! "${{ github.ref_name }}" =~ $VALID_BRANCH_PATTERN ]]; then
               echo "- ❌ Branch must be 'ionos-dev', 'ionos-stable', 'rc/*' or '*/dev/*' (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
               echo "   ❌ Branch is '${{ github.ref_name }}' (must be 'ionos-dev', 'ionos-stable', 'rc/*' or '*/dev/*')"
@@ -784,10 +784,11 @@ jobs:
 
   upload-to-artifactory:
     runs-on: self-hosted
-    # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-dev-v32|ionos-stable|rc/*|*/dev/*" branch push defined in the on:push:branches *OR* on manual workflow_dispatch
+    # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-dev-v*|ionos-stable|ionos-stable-v*|rc/*|*/dev/*" branch push defined in the on:push:branches *OR* on manual workflow_dispatch
+    # The per-major lanes are matched by prefix so a new major (v33, v34, …) needs no edit here.
     if: |
       always() &&
-      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-dev-v32' || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'rc/') || contains(github.ref_name, '/dev/')) &&
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref_name == 'ionos-dev' || startsWith(github.ref_name, 'ionos-dev-v') || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'ionos-stable-v') || startsWith(github.ref_name, 'rc/') || contains(github.ref_name, '/dev/')) &&
       needs.prepare-matrix.result == 'success' &&
       (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
       needs.build-artifact.result == 'success'
@@ -871,15 +872,20 @@ jobs:
           # |------------------|----------------|--------------------------------------------------------------------------------------------|
           # | Pull Request     | dev            | dev/pr/nextcloud-workspace-pr-<number>.zip                                                 |
           # | ionos-dev        | dev            | dev/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                         |
-          # | ionos-dev-v32    | dev            | dev/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip (ncVersion namespaces it) |
+          # | ionos-dev-v*     | dev            | dev/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip (ncVersion namespaces it) |
           # | ionos-stable     | stable         | stable/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                      |
+          # | ionos-stable-v*  | stable         | stable/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip (ncVersion namespaces it) |
           # | rc/*             | rc             | rc/<github.ref_name>/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip        |
           # | */dev/*          | dev-*          | dev-<prefix>/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                |
+          #
+          # The dev lanes need no arm: both ionos-dev and ionos-dev-v<N> fall through to the
+          # "dev" default. The stable arm must match the suffixed form explicitly, or a future
+          # ionos-stable-v<N> would silently publish into dev/.
 
           ARTIFACTORY_STAGE_PREFIX="dev"
 
           # Set stage prefix based on branch
-          if [ "${{ github.ref_name }}" == "ionos-stable" ]; then
+          if [[ "${{ github.ref_name }}" == "ionos-stable" || "${{ github.ref_name }}" == ionos-stable-v[0-9]* ]]; then
               ARTIFACTORY_STAGE_PREFIX="stable"
           # set ARTIFACTORY_STAGE_PREFIX=rc on rc/* branches
           elif [[ "${{ github.ref_name }}" =~ ^rc/.*$ ]]; then
@@ -1043,10 +1049,14 @@ jobs:
     # Can be disabled via repository variable 'DISABLE_REMOTE_TRIGGER' (set to 'true' to disable)
     # Configure at: https://github.com/IONOS-Productivity/ncw-server/settings/variables/actions
     #
-    # NOTE (NSW-944): 'ionos-dev-v32' is deliberately absent from the condition below while it also
-    # appears in on:push:branches and in the upload-to-artifactory condition. That combination is
-    # the Nextcloud-major freeze: the v32 integration branch produces build artifacts you can pull
-    # with check_release.sh, but can never trigger a remote deploy. Add it here only at the v32
+    # NOTE (NSW-944): the per-major lanes 'ionos-dev-v*' are deliberately absent from the condition
+    # below while they DO appear in on:push:branches and in the upload-to-artifactory condition.
+    # That combination is the Nextcloud-major freeze: a per-major integration branch produces build
+    # artifacts you can pull with check_release.sh, but can never trigger a remote deploy.
+    #
+    # The arms below are exact equality on purpose. 'ionos-dev' does not match 'ionos-dev-v32', so
+    # the freeze holds for every future major without further edits — do not "tidy" these into
+    # startsWith(), which would silently start deploying the next major. Widen this only at a
     # cutover, when the deployed major is meant to change.
     if: |
       always() &&
@@ -1122,17 +1132,25 @@ jobs:
           set -x
 
           # Branch to GitLab Trigger Mapping:
-          # | ref_name     | GITLAB_REF   | BUILD_TYPE  |
-          # |--------------|--------------|-------------|
-          # | ionos-dev    | main         | dev         |
-          # | ionos-stable | main         | stable      |
-          # | rc/*         | main         | rc          |
-          # | */dev/*      | main         | dev-*       |
+          # | ref_name         | GITLAB_REF   | BUILD_TYPE  |
+          # |------------------|--------------|-------------|
+          # | ionos-dev        | main         | dev         |
+          # | ionos-stable     | main         | stable      |
+          # | ionos-stable-v*  | main         | stable      |
+          # | rc/*             | main         | rc          |
+          # | */dev/*          | main         | dev-*       |
+          #
+          # 'ionos-dev-v*' has no row: the per-major dev lanes never reach this job (see the
+          # freeze note on the job's if: condition).
+          #
+          # GITLAB_REF stays 'main' for every lane and BUILD_TYPE keeps its existing values —
+          # both are consumed on the GitLab side, so changing either needs a coordinated change
+          # there first. NC_MAJOR below is additive and cannot break an existing consumer.
 
           BUILD_TYPE="dev"
 
-          # Override build type for stable branch
-          if [ "${{ github.ref_name }}" == "ionos-stable" ]; then
+          # Override build type for stable branch, suffixed or not
+          if [[ "${{ github.ref_name }}" == "ionos-stable" || "${{ github.ref_name }}" == ionos-stable-v[0-9]* ]]; then
               BUILD_TYPE="stable"
           # Override build type for rc/* branches
           elif [[ "${{ github.ref_name }}" =~ ^rc/ ]]; then
@@ -1143,6 +1161,14 @@ jobs:
               BRANCH_PREFIX=$(echo "${{ github.ref_name }}" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
               BUILD_TYPE="dev-${BRANCH_PREFIX}"
           fi
+
+          # NC major, taken from NC_VERSION ("<major>.<minor>.<patch>.<rev>.<run>") rather than
+          # from the branch name — version.php is authoritative, and the unsuffixed lanes carry
+          # no major in their name at all. The two are already proven to agree: prepare-matrix
+          # asserts it for every lane whose name does encode a major.
+          NC_VERSION="${{ needs.build-artifact.outputs.NC_VERSION }}"
+          NC_MAJOR="${NC_VERSION%%.*}"
+          echo "NC_MAJOR: $NC_MAJOR"
 
           # Construct source build URL for traceability
           SOURCE_BUILD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -1168,6 +1194,7 @@ jobs:
               --form "variables[GITHUB_SHA]=${{ github.sha }}" \
               --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}" \
               --form "variables[NC_VERSION]=${{ needs.build-artifact.outputs.NC_VERSION }}" \
+              --form "variables[NC_MAJOR]=${NC_MAJOR}" \
               --form "variables[BUILD_ID]=${{ github.run_id }}" \
               --form "variables[BUILD_TYPE]=${BUILD_TYPE}" \
               --form "variables[SOURCE_BUILD_URL]=${SOURCE_BUILD_URL}" \
