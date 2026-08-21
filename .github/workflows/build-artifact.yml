@@ -28,9 +28,17 @@ on:
       - '**.vue'
       - '.gitmodules'
   push:
+    # One converged list, identical on every branch. GitHub evaluates this block
+    # from the pushed branch's own copy, so the list must cover every live lane:
+    # the per-major globs, the legacy unsuffixed lanes (retired later), the trains
+    # in both naming eras, and user dev branches.
+    #
+    # Keeping the unsuffixed entries is load-bearing: `ionos-dev` does not match
+    # `ionos-dev-v*`, so dropping them would leave the v31 lane dark.
     branches:
+      - 'ionos-dev-v*'
+      - 'ionos-stable-v*'
       - ionos-dev
-      - ionos-dev-v32
       - ionos-stable
       - 'rc/**'
       - '*/dev/*'
@@ -52,13 +60,19 @@ on:
         type: string
         default: ''
 
+# Protected lanes (ionos-dev*/ionos-stable*/rc/*) use a unique-per-run-id key so
+# consecutive pushes never cancel each other. Matched by prefix, not by exact ref:
+# an exact list does not match a per-major lane, which would fall through to the
+# ref-keyed branch below and make consecutive pushes to ionos-dev-v<N> cancel each
+# other. Everything else stays ref-keyed, so a new push supersedes a running one.
 concurrency:
   group: >-
     ${{ github.workflow }}-${{
       github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) ||
       (
         (
-          contains(fromJson('["refs/heads/ionos-dev","refs/heads/ionos-stable"]'), github.ref) ||
+          startsWith(github.ref, 'refs/heads/ionos-dev') ||
+          startsWith(github.ref, 'refs/heads/ionos-stable') ||
           startsWith(github.ref, 'refs/heads/rc/')
         ) && github.run_id ||
         github.ref
