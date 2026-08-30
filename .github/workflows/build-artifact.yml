@@ -1228,6 +1228,8 @@ jobs:
           #
           # BUILD_TYPE only says which lane a build came from — which major it carries is
           # NC_MAJOR below, so the per-major lanes share their unsuffixed lane's BUILD_TYPE.
+          # The ref name is forwarded verbatim as well, so the downstream release report can
+          # name the exact RC or branch and link back to it.
           #
           # GITLAB_REF stays 'main' for every lane and BUILD_TYPE keeps its existing values —
           # both are consumed on the GitLab side, so changing either needs a coordinated change
@@ -1286,6 +1288,8 @@ jobs:
               --form "variables[NC_MAJOR]=${NC_MAJOR}" \
               --form "variables[BUILD_ID]=${{ github.run_id }}" \
               --form "variables[BUILD_TYPE]=${BUILD_TYPE}" \
+              --form "variables[GITHUB_REF_NAME]=${{ github.ref_name }}" \
+              --form "variables[GITHUB_REPOSITORY]=${{ github.repository }}" \
               --form "variables[SOURCE_BUILD_URL]=${SOURCE_BUILD_URL}" \
               "${{ secrets.GITLAB_TRIGGER_URL }}"; then
               TRIGGER_SUCCESS=true
