@@ -186,6 +186,10 @@ jobs:
           echo "### 🔧 Remote Trigger Configuration" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**DISABLE_REMOTE_TRIGGER value:** \`${{ vars.DISABLE_REMOTE_TRIGGER }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**ENABLE_REMOTE_TRIGGER_USER_DEV value:** \`${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}" != "true" ]; then
+            echo "  - 💡 To enable the GitLab trigger for \`*/dev/*\` branches, set repository variable \`ENABLE_REMOTE_TRIGGER_USER_DEV\` to \`true\` at [Settings → Variables → Actions](https://github.com/${{ github.repository }}/settings/variables/actions)." >> $GITHUB_STEP_SUMMARY
+          fi
           echo "**REMOTE_TRIGGER_NC_VERSION:** \`${{ vars.REMOTE_TRIGGER_NC_VERSION }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**REMOTE_TRIGGER_RC_BRANCH:** \`${{ vars.REMOTE_TRIGGER_RC_BRANCH }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Event type:** \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
@@ -196,6 +200,12 @@ jobs:
           echo "🔧 Remote Trigger Configuration"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "DISABLE_REMOTE_TRIGGER    = '${{ vars.DISABLE_REMOTE_TRIGGER }}'"
+          echo "ENABLE_REMOTE_TRIGGER_USER_DEV = '${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}'"
+          if [ "${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}" != "true" ]; then
+            echo "  💡 To enable the GitLab trigger for '*/dev/*' branches,"
+            echo "     set repository variable ENABLE_REMOTE_TRIGGER_USER_DEV to 'true' at:"
+            echo "     https://github.com/${{ github.repository }}/settings/variables/actions"
+          fi
           echo "REMOTE_TRIGGER_NC_VERSION = '${{ vars.REMOTE_TRIGGER_NC_VERSION }}'"
           echo "REMOTE_TRIGGER_RC_BRANCH  = '${{ vars.REMOTE_TRIGGER_RC_BRANCH }}'"
           echo "Event type                = '${{ github.event_name }}'"
@@ -249,8 +259,17 @@ jobs:
             # twice — an edit to either must be mirrored in the other, or this summary
             # reports an outcome the pipeline does not produce.
             if [[ "${{ github.ref_name }}" =~ $USER_DEV_PATTERN ]]; then
-              echo "- ✅ Version gate: '*/dev/*' branches are not version-gated" >> $GITHUB_STEP_SUMMARY
-              echo "   ✅ Version gate: '*/dev/*' branches are not version-gated"
+              # Not version-gated; governed solely by the ENABLE_REMOTE_TRIGGER_USER_DEV opt-in.
+              if [ "${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}" == "true" ]; then
+                echo "- ✅ User-dev branch opt-in (\`ENABLE_REMOTE_TRIGGER_USER_DEV='true'\`)" >> $GITHUB_STEP_SUMMARY
+                echo "   ✅ ENABLE_REMOTE_TRIGGER_USER_DEV='true' — '*/dev/*' trigger is opted in"
+              else
+                echo "- ❌ User-dev branch requires \`ENABLE_REMOTE_TRIGGER_USER_DEV='true'\` (current: \`${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}\`)" >> $GITHUB_STEP_SUMMARY
+                echo "- ℹ️  Build & image push will still run — only QA deployment is skipped" >> $GITHUB_STEP_SUMMARY
+                echo "   ❌ '*/dev/*' branch requires ENABLE_REMOTE_TRIGGER_USER_DEV='true' (current: '${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}')"
+                echo "   ℹ️  Build & image push will still run — only QA deployment is skipped"
+                WILL_TRIGGER=false
+              fi
             else
               # Bare ionos-dev/ionos-stable are always exempt; the ionos-(dev|stable)-v* branches
               # must end with REMOTE_TRIGGER_NC_VERSION; all other branches reaching here (rc/*)
@@ -1109,7 +1128,9 @@ jobs:
     #   branch pass by coincidence of name. Set 'REMOTE_TRIGGER_RC_BRANCH' to the exact RC branch
     #   that should trigger QA (e.g. "rc/ncw-7", or "rc/ncw-v32-1" in the current naming era).
     #   Only one RC at a time; when promoting a new RC, update the variable to the new branch name.
-    # */dev/* branches bypass the version gate entirely.
+    # */dev/* branches bypass the version gate entirely and are controlled solely by repository
+    #   variable 'ENABLE_REMOTE_TRIGGER_USER_DEV' (default off — set to 'true' to let user dev
+    #   branches deploy to QA). They still build and still upload to Artifactory when off.
     #
     # Widening the gate at a cutover also requires widening the BUILD_TYPE stable arm further
     # down; otherwise a newly-admitted ionos-stable-v<N> would deploy as BUILD_TYPE=dev.
@@ -1118,7 +1139,8 @@ jobs:
       github.event_name == 'push' &&
       (github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' ||
        startsWith(github.ref_name, 'ionos-dev-v') || startsWith(github.ref_name, 'ionos-stable-v') ||
-       startsWith(github.ref_name, 'rc/') || contains(github.ref_name, '/dev/')) &&
+       startsWith(github.ref_name, 'rc/') ||
+       (contains(github.ref_name, '/dev/') && vars.ENABLE_REMOTE_TRIGGER_USER_DEV == 'true')) &&
       needs.build-artifact.result == 'success' &&
       needs.upload-to-artifactory.result == 'success' &&
       vars.DISABLE_REMOTE_TRIGGER != 'true' &&
@@ -1526,6 +1548,7 @@ jobs:
           echo ""
           echo "### Repository Variables"
           echo "DISABLE_REMOTE_TRIGGER: ${{ vars.DISABLE_REMOTE_TRIGGER || 'not set' }}"
+          echo "ENABLE_REMOTE_TRIGGER_USER_DEV: ${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV || 'not set' }}"
           echo "REMOTE_TRIGGER_NC_VERSION: ${{ vars.REMOTE_TRIGGER_NC_VERSION || 'not set' }}"
           echo "REMOTE_TRIGGER_RC_BRANCH: ${{ vars.REMOTE_TRIGGER_RC_BRANCH || 'not set' }}"
           echo ""
