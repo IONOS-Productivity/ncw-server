@@ -104,6 +104,9 @@ jobs:
       has_apps_to_build: ${{ steps.detect.outputs.has_apps_to_build }}
       has_apps_to_restore: ${{ steps.detect.outputs.has_apps_to_restore }}
       effective_cache_version: ${{ steps.compute_cache_version.outputs.effective_cache_version }}
+      # Consumed by debug-pipeline-status to explain a skipped trigger-remote-dev-workflow.
+      remote_trigger_expected: ${{ steps.check_config.outputs.remote_trigger_expected }}
+      remote_trigger_reason: ${{ steps.check_config.outputs.remote_trigger_reason }}
     steps:
       - name: Compute effective cache version
         id: compute_cache_version
@@ -180,7 +183,13 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y make jq
 
+      # Besides printing the configuration, this step publishes its verdict as job outputs
+      # (remote_trigger_expected / remote_trigger_reason) so debug-pipeline-status can say *why*
+      # the trigger job was skipped instead of reporting a bare 'skipped'. That job consumes the
+      # verdict rather than re-deriving it — the gate is already encoded twice (here and in the
+      # trigger job's if:), and a third copy would be a maintenance trap.
       - name: Check configuration
+        id: check_config
         run: |
           echo ""
           echo "### 🔧 Remote Trigger Configuration" >> $GITHUB_STEP_SUMMARY
@@ -212,7 +221,22 @@ jobs:
           echo "Branch                    = '${{ github.ref_name }}'"
           echo ""
 
+          # TRIGGER_REASON names the gate that blocked, and is published below for
+          # debug-pipeline-status to quote. It is only meaningful when WILL_TRIGGER=false.
+          WILL_TRIGGER=false
+          TRIGGER_REASON=""
+
+          # First failing gate wins. The checks below are not mutually exclusive — an invalid
+          # branch also falls through to the version gate — so a later one must not overwrite the
+          # reason an earlier one recorded, or e.g. 'master' would be reported as a version
+          # mismatch rather than as "not a build lane". Each check still prints its own finding.
+          set_reason() {
+            if [ -z "$TRIGGER_REASON" ]; then TRIGGER_REASON="$1"; fi
+            return 0
+          }
+
           if [ "${{ vars.DISABLE_REMOTE_TRIGGER }}" == "true" ]; then
+            set_reason "DISABLE_REMOTE_TRIGGER='true' — remote trigger force-disabled repo-wide"
             echo "⚠️  Remote trigger is DISABLED"
             echo "    The 'trigger-remote-dev-workflow' job will be SKIPPED"
             echo "**Status:** ⚠️ Remote trigger is **DISABLED**" >> $GITHUB_STEP_SUMMARY
@@ -235,6 +259,7 @@ jobs:
             if [ "${{ github.event_name }}" != "push" ]; then
               echo "- ❌ Event must be 'push' (current: \`${{ github.event_name }}\`)" >> $GITHUB_STEP_SUMMARY
               echo "   ❌ Event type is '${{ github.event_name }}' (must be 'push')"
+              set_reason "event is '${{ github.event_name }}', the trigger only runs on 'push'"
               WILL_TRIGGER=false
             else
               echo "- ✅ Event is 'push'" >> $GITHUB_STEP_SUMMARY
@@ -248,6 +273,7 @@ jobs:
             if [[ ! "${{ github.ref_name }}" =~ $VALID_BRANCH_PATTERN ]]; then
               echo "- ❌ Branch must be ${VALID_BRANCH_DESC} (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
               echo "   ❌ Branch is '${{ github.ref_name }}' (must be ${VALID_BRANCH_DESC})"
+              set_reason "branch '${{ github.ref_name }}' is not a build lane (expected ${VALID_BRANCH_DESC})"
               WILL_TRIGGER=false
             else
               echo "- ✅ Branch is '\`${{ github.ref_name }}\`'" >> $GITHUB_STEP_SUMMARY
@@ -268,6 +294,7 @@ jobs:
                 echo "- ℹ️  Build & image push will still run — only QA deployment is skipped" >> $GITHUB_STEP_SUMMARY
                 echo "   ❌ '*/dev/*' branch requires ENABLE_REMOTE_TRIGGER_USER_DEV='true' (current: '${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}')"
                 echo "   ℹ️  Build & image push will still run — only QA deployment is skipped"
+                set_reason "'*/dev/*' branch needs ENABLE_REMOTE_TRIGGER_USER_DEV='true' (currently '${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}')"
                 WILL_TRIGGER=false
               fi
             else
@@ -296,6 +323,7 @@ jobs:
                 echo "- ℹ️  Build & image push will still run — only QA deployment is skipped" >> $GITHUB_STEP_SUMMARY
                 echo "   ❌ Version gate: branch '$BRANCH' does not match version '$NC_VERSION' or RC branch '$RC_BRANCH'"
                 echo "   ℹ️  Build & image push will still run — only QA deployment is skipped"
+                set_reason "version gate: '$BRANCH' matches neither REMOTE_TRIGGER_NC_VERSION='$NC_VERSION' nor REMOTE_TRIGGER_RC_BRANCH='$RC_BRANCH'"
                 WILL_TRIGGER=false
               fi
             fi
@@ -314,6 +342,14 @@ jobs:
             fi
           fi
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Publish the verdict for debug-pipeline-status. Only the branch/event/variable gates are
+          # visible from here — whether the dependent jobs succeed is not known until much later,
+          # so the consumer checks those itself and falls back to this reason.
+          {
+            echo "remote_trigger_expected=${WILL_TRIGGER}"
+            echo "remote_trigger_reason=${TRIGGER_REASON}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: List caches before restore
         run: gh cache list
@@ -1412,6 +1448,26 @@ jobs:
           analyze_job "upload-to-artifactory" "${{ needs.upload-to-artifactory.result }}"
           analyze_job "nextcloud-workspace-artifact-to-ghcr_io" "${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result }}"
           analyze_job "trigger-remote-dev-workflow" "${{ needs.trigger-remote-dev-workflow.result }}"
+
+          # Explain a skipped remote trigger. Two sources, in precedence order:
+          #   1. a dependency did not succeed — prepare-matrix ran too early to know this
+          #   2. otherwise, the branch/event/variable verdict prepare-matrix published
+          # Falls back to empty (and so to a bare 'skipped', as before) when prepare-matrix itself
+          # did not complete and published no reason.
+          TRIGGER_SKIP_REASON=""
+          if [ "${{ needs.trigger-remote-dev-workflow.result }}" == "skipped" ]; then
+            if [ "${{ needs.build-artifact.result }}" != "success" ]; then
+              TRIGGER_SKIP_REASON="build-artifact did not succeed (${{ needs.build-artifact.result }})"
+            elif [ "${{ needs.upload-to-artifactory.result }}" != "success" ]; then
+              TRIGGER_SKIP_REASON="upload-to-artifactory did not succeed (${{ needs.upload-to-artifactory.result }})"
+            else
+              TRIGGER_SKIP_REASON="${{ needs.prepare-matrix.outputs.remote_trigger_reason }}"
+            fi
+          fi
+
+          if [ -n "$TRIGGER_SKIP_REASON" ]; then
+            echo "   ↳ reason: $TRIGGER_SKIP_REASON"
+          fi
           echo ""
 
           # Overall pipeline status
@@ -1501,6 +1557,12 @@ jobs:
             echo "| nextcloud-workspace-artifact-to-ghcr_io | ${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result == 'success' && '✅' || needs.nextcloud-workspace-artifact-to-ghcr_io.result == 'failure' && '❌' || needs.nextcloud-workspace-artifact-to-ghcr_io.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result }} |"
             echo "| trigger-remote-dev-workflow | ${{ needs.trigger-remote-dev-workflow.result == 'success' && '✅' || needs.trigger-remote-dev-workflow.result == 'failure' && '❌' || needs.trigger-remote-dev-workflow.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.trigger-remote-dev-workflow.result }} |"
             echo ""
+            if [ -n "$TRIGGER_SKIP_REASON" ]; then
+              echo "> ⏭️ **No remote QA deployment was triggered:** $TRIGGER_SKIP_REASON"
+              echo ">"
+              echo "> Configure at [Settings → Variables → Actions](${{ github.server_url }}/${{ github.repository }}/settings/variables/actions)."
+              echo ""
+            fi
 
             if [ -n "$FAILED_JOBS" ]; then
               echo "## ❌ Pipeline Status: FAILED"
