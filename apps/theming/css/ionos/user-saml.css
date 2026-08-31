@@ -1,0 +1,22 @@
+/*
+ * SPDX-FileCopyrightText: 2025 IONOS SE
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
+ * user_saml uses --color-primary-text (white, for text on primary-colored surfaces)
+ * for text and borders on the main background, making them invisible in light mode.
+ * Override with --color-main-text which is the correct variable for content on the
+ * main background.
+ */
+#saml-select-user-back-end {
+	color: var(--color-main-text);
+}
+
+.login-option {
+	border-color: var(--color-main-text);
+}
+
+.login-option a {
+	color: var(--color-main-text);
+}

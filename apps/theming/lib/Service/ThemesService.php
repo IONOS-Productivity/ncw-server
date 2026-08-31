@@ -13,6 +13,7 @@ use OCA\Theming\Themes\DarkTheme;
 use OCA\Theming\Themes\DefaultTheme;
 use OCA\Theming\Themes\DyslexiaFont;
 use OCA\Theming\Themes\HighContrastTheme;
+use OCA\Theming\Themes\IonosTheme;
 use OCA\Theming\Themes\LightTheme;
 use OCP\IConfig;
 use OCP\IUser;
@@ -33,6 +34,7 @@ class ThemesService {
 		HighContrastTheme $highContrastTheme,
 		DarkHighContrastTheme $darkHighContrastTheme,
 		DyslexiaFont $dyslexiaFont,
+		IonosTheme $ionosTheme,
 	) {
 
 		// Register themes
@@ -42,6 +44,7 @@ class ThemesService {
 			$darkTheme->getId() => $darkTheme,
 			$highContrastTheme->getId() => $highContrastTheme,
 			$darkHighContrastTheme->getId() => $darkHighContrastTheme,
+			$ionosTheme->getId() => $ionosTheme,
 			$dyslexiaFont->getId() => $dyslexiaFont,
 		];
 	}
@@ -63,6 +66,7 @@ class ThemesService {
 			$defaultTheme = $this->themesProviders[$this->defaultTheme->getId()];
 			$darkTheme = $this->themesProviders[$this->darkTheme->getId()];
 			$theme = $this->themesProviders[$enforcedTheme];
+			$dyslexiaFont = $this->themesProviders['opendyslexic'];
 			return [
 				// Leave the default theme as a fallback
 				$defaultTheme->getId() => $defaultTheme,
@@ -71,6 +75,8 @@ class ThemesService {
 				$darkTheme->getId() => $darkTheme,
 				// Finally, the enforced theme
 				$theme->getId() => $theme,
+				// Always available
+				$dyslexiaFont->getId() => $dyslexiaFont,
 			];
 		}
 

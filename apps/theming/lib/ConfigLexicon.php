@@ -24,6 +24,8 @@ class ConfigLexicon implements ILexicon {
 	/** The cache buster index */
 	public const CACHE_BUSTER = 'cachebuster';
 	public const USER_THEMING_DISABLED = 'disable-user-theming';
+	/** IONOS: whether the admin may customise theming from the web UI */
+	public const ADMIN_THEMING_DISABLED = 'disable_admin_theming';
 
 	/** Name of the software running on this instance (usually "Nextcloud") */
 	public const PRODUCT_NAME = 'productName';
@@ -35,6 +37,10 @@ class ConfigLexicon implements ILexicon {
 	public const INSTANCE_IMPRINT_URL = 'imprintUrl';
 	/** Privacy URL of this instance */
 	public const INSTANCE_PRIVACY_URL = 'privacyUrl';
+	/** IONOS: deployment-provided imprint URL, used when the admin set none */
+	public const INSTANCE_IMPRINT_URL_DEFAULT = 'imprintUrlDefault';
+	/** IONOS: deployment-provided privacy URL, used when the admin set none */
+	public const INSTANCE_PRIVACY_URL_DEFAULT = 'privacyUrlDefault';
 
 	// legacy theming
 	/** Base URL of this instance */
@@ -60,6 +66,12 @@ class ConfigLexicon implements ILexicon {
 				ValueType::BOOL,
 				defaultRaw: false,
 				definition: 'Whether user theming is disabled.',
+			),
+			new Entry(
+				self::ADMIN_THEMING_DISABLED,
+				ValueType::BOOL,
+				defaultRaw: false,
+				definition: 'Whether admin theming customization is disabled (IONOS).',
 			),
 
 			// instance theming
@@ -92,6 +104,18 @@ class ConfigLexicon implements ILexicon {
 				ValueType::STRING,
 				defaultRaw: '',
 				definition: 'Privacy URL of this instance.',
+			),
+			new Entry(
+				self::INSTANCE_IMPRINT_URL_DEFAULT,
+				ValueType::STRING,
+				defaultRaw: '',
+				definition: 'Deployment-provided imprint URL, used when the admin set none (IONOS).',
+			),
+			new Entry(
+				self::INSTANCE_PRIVACY_URL_DEFAULT,
+				ValueType::STRING,
+				defaultRaw: '',
+				definition: 'Deployment-provided privacy URL, used when the admin set none (IONOS).',
 			),
 
 			// legacy theming

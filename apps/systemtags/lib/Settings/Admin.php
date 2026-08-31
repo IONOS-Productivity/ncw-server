@@ -10,14 +10,16 @@ use OCA\SystemTags\AppInfo\Application;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
 use OCP\IAppConfig;
-use OCP\Settings\ISettings;
+use OCP\IL10N;
+use OCP\Settings\IDelegatedSettings;
 use OCP\Util;
 
-class Admin implements ISettings {
+class Admin implements IDelegatedSettings {
 
 	public function __construct(
 		private IAppConfig $appConfig,
 		private IInitialState $initialStateService,
+		private IL10N $l10n,
 	) {
 	}
 
@@ -48,5 +50,17 @@ class Admin implements ISettings {
 	 */
 	public function getPriority() {
 		return 70;
+	}
+
+	public function getName(): string {
+		return $this->l10n->t('Collaborative tags');
+	}
+
+	public function getAuthorizedAppConfig(): array {
+		// The form's only control writes this key through the provisioning_api
+		// appconfig endpoint, so a delegated group must be authorized for it.
+		return [
+			Application::APP_ID => ['/^restrict_creation_to_admin$/'],
+		];
 	}
 }

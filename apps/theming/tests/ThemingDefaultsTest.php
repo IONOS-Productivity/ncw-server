@@ -81,17 +81,17 @@ class ThemingDefaultsTest extends TestCase {
 		$this->appConfig
 			->expects($this->once())
 			->method('getAppValueString')
-			->with('name', 'Nextcloud')
-			->willReturn('Nextcloud');
+			->with('name', 'Nextcloud Workspace')
+			->willReturn('Nextcloud Workspace');
 
-		$this->assertEquals('Nextcloud', $this->template->getName());
+		$this->assertEquals('Nextcloud Workspace', $this->template->getName());
 	}
 
 	public function testGetNameWithCustom(): void {
 		$this->appConfig
 			->expects($this->once())
 			->method('getAppValueString')
-			->with('name', 'Nextcloud')
+			->with('name', 'Nextcloud Workspace')
 			->willReturn('MyCustomCloud');
 
 		$this->assertEquals('MyCustomCloud', $this->template->getName());
@@ -101,17 +101,17 @@ class ThemingDefaultsTest extends TestCase {
 		$this->appConfig
 			->expects($this->once())
 			->method('getAppValueString')
-			->with('name', 'Nextcloud')
-			->willReturn('Nextcloud');
+			->with('name', 'Nextcloud Workspace')
+			->willReturn('Nextcloud Workspace');
 
-		$this->assertEquals('Nextcloud', $this->template->getHTMLName());
+		$this->assertEquals('Nextcloud Workspace', $this->template->getHTMLName());
 	}
 
 	public function testGetHTMLNameWithCustom(): void {
 		$this->appConfig
 			->expects($this->once())
 			->method('getAppValueString')
-			->with('name', 'Nextcloud')
+			->with('name', 'Nextcloud Workspace')
 			->willReturn('MyCustomCloud');
 
 		$this->assertEquals('MyCustomCloud', $this->template->getHTMLName());
@@ -121,17 +121,17 @@ class ThemingDefaultsTest extends TestCase {
 		$this->appConfig
 			->expects($this->once())
 			->method('getAppValueString')
-			->with('name', 'Nextcloud')
-			->willReturn('Nextcloud');
+			->with('name', 'Nextcloud Workspace')
+			->willReturn('Nextcloud Workspace');
 
-		$this->assertEquals('Nextcloud', $this->template->getTitle());
+		$this->assertEquals('Nextcloud Workspace', $this->template->getTitle());
 	}
 
 	public function testGetTitleWithCustom(): void {
 		$this->appConfig
 			->expects($this->once())
 			->method('getAppValueString')
-			->with('name', 'Nextcloud')
+			->with('name', 'Nextcloud Workspace')
 			->willReturn('MyCustomCloud');
 
 		$this->assertEquals('MyCustomCloud', $this->template->getTitle());
@@ -142,17 +142,17 @@ class ThemingDefaultsTest extends TestCase {
 		$this->appConfig
 			->expects($this->once())
 			->method('getAppValueString')
-			->with('name', 'Nextcloud')
-			->willReturn('Nextcloud');
+			->with('name', 'Nextcloud Workspace')
+			->willReturn('Nextcloud Workspace');
 
-		$this->assertEquals('Nextcloud', $this->template->getEntity());
+		$this->assertEquals('Nextcloud Workspace', $this->template->getEntity());
 	}
 
 	public function testGetEntityWithCustom(): void {
 		$this->appConfig
 			->expects($this->once())
 			->method('getAppValueString')
-			->with('name', 'Nextcloud')
+			->with('name', 'Nextcloud Workspace')
 			->willReturn('MyCustomCloud');
 
 		$this->assertEquals('MyCustomCloud', $this->template->getEntity());
@@ -188,23 +188,47 @@ class ThemingDefaultsTest extends TestCase {
 	#[\PHPUnit\Framework\Attributes\DataProvider('legalUrlProvider')]
 	public function testGetImprintURL(string $imprintUrl): void {
 		$this->appConfig
-			->expects($this->once())
 			->method('getAppValueString')
-			->with('imprintUrl', '')
-			->willReturn($imprintUrl);
+			->willReturnMap([
+				['imprintUrl', '', $imprintUrl],
+				['imprintUrlDefault', '', ''],
+			]);
 
 		$this->assertEquals($imprintUrl, $this->template->getImprintUrl());
+	}
+
+	public function testGetImprintURLFallsBackToDeploymentDefault(): void {
+		$this->appConfig
+			->method('getAppValueString')
+			->willReturnMap([
+				['imprintUrl', '', ''],
+				['imprintUrlDefault', '', 'https://example.com/deployment-legal'],
+			]);
+
+		$this->assertEquals('https://example.com/deployment-legal', $this->template->getImprintUrl());
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider('legalUrlProvider')]
 	public function testGetPrivacyURL(string $privacyUrl): void {
 		$this->appConfig
-			->expects($this->once())
 			->method('getAppValueString')
-			->with('privacyUrl', '')
-			->willReturn($privacyUrl);
+			->willReturnMap([
+				['privacyUrl', '', $privacyUrl],
+				['privacyUrlDefault', '', ''],
+			]);
 
 		$this->assertEquals($privacyUrl, $this->template->getPrivacyUrl());
+	}
+
+	public function testGetPrivacyURLFallsBackToDeploymentDefault(): void {
+		$this->appConfig
+			->method('getAppValueString')
+			->willReturnMap([
+				['privacyUrl', '', ''],
+				['privacyUrlDefault', '', 'https://example.com/deployment-privacy'],
+			]);
+
+		$this->assertEquals('https://example.com/deployment-privacy', $this->template->getPrivacyUrl());
 	}
 
 	public function testGetSloganWithDefault(): void {
@@ -229,13 +253,14 @@ class ThemingDefaultsTest extends TestCase {
 
 	public function testGetShortFooter(): void {
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
-				['name', 'Nextcloud', 'Name'],
+				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -245,13 +270,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterEmptyUrl(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), ''],
-				['name', 'Nextcloud', 'Name'],
+				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -261,13 +287,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterEmptySlogan(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
-				['name', 'Nextcloud', 'Name'],
+				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), ''],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -277,13 +304,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterImprint(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
-				['name', 'Nextcloud', 'Name'],
+				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', 'https://example.com/imprint'],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -298,13 +326,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterPrivacy(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
-				['name', 'Nextcloud', 'Name'],
+				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', 'https://example.com/privacy'],
 			]);
 
@@ -319,13 +348,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterAllLegalLinks(): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
-				['name', 'Nextcloud', 'Name'],
+				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', 'https://example.com/imprint'],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', 'https://example.com/privacy'],
 			]);
 
@@ -348,13 +378,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterInvalidImprint(string $invalidImprintUrl): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
-				['name', 'Nextcloud', 'Name'],
+				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', $invalidImprintUrl],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 			]);
 
@@ -365,13 +396,14 @@ class ThemingDefaultsTest extends TestCase {
 	public function testGetShortFooterInvalidPrivacy(string $invalidPrivacyUrl): void {
 		$this->navigationManager->expects($this->once())->method('getAll')->with(INavigationManager::TYPE_GUEST)->willReturn([]);
 		$this->appConfig
-			->expects($this->exactly(5))
 			->method('getAppValueString')
 			->willReturnMap([
 				['url', $this->defaults->getBaseUrl(), 'url'],
-				['name', 'Nextcloud', 'Name'],
+				['name', 'Nextcloud Workspace', 'Name'],
 				['slogan', $this->defaults->getSlogan(), 'Slogan'],
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', $invalidPrivacyUrl],
 			]);
 
@@ -518,14 +550,14 @@ class ThemingDefaultsTest extends TestCase {
 		$this->appConfig
 			->expects($this->once())
 			->method('getAppValueString')
-			->with('name', 'Nextcloud')
-			->willReturn('Nextcloud');
+			->with('name', 'Nextcloud Workspace')
+			->willReturn('Nextcloud Workspace');
 		$this->appConfig
 			->expects($this->once())
 			->method('setAppValueInt')
 			->with('cachebuster', 16);
 
-		$this->assertSame('Nextcloud', $this->template->undo('name'));
+		$this->assertSame('Nextcloud Workspace', $this->template->undo('name'));
 	}
 
 	public function testUndoBaseUrl(): void {
@@ -689,7 +721,9 @@ class ThemingDefaultsTest extends TestCase {
 			->expects($this->any())
 			->method('getAppValueString')
 			->willReturnMap([
+				['imprintUrlDefault', '', ''],
 				['imprintUrl', '', ''],
+				['privacyUrlDefault', '', ''],
 				['privacyUrl', '', ''],
 				['logoMime', '', 'jpeg'],
 				['backgroundMime', '', 'jpeg'],
@@ -800,6 +834,12 @@ class ThemingDefaultsTest extends TestCase {
 			['core', 'manifest.json'],
 			['core', 'favicon.ico'],
 			['core', 'favicon-touch.png'],
+			['core', 'favicon.svg', 'themingLink?v=1234abcd'],
+			['core', 'favicon.png', 'themingLink?v=1234abcd'],
+			['core', 'favicon-touch.svg', 'themingLink?v=1234abcd'],
+			['core', 'favicon-mask.svg', 'themingLink?v=1234abcd'],
+			['mail', 'favicon.ico'],
+			['calendar', 'favicon-touch.png'],
 		];
 	}
 
@@ -818,6 +858,10 @@ class ThemingDefaultsTest extends TestCase {
 			->expects($this->any())
 			->method('linkToRoute')
 			->willReturn('themingRoute');
+		$this->urlGenerator
+			->expects($this->any())
+			->method('linkTo')
+			->willReturn('themingLink');
 		if ($result) {
 			$this->util
 				->expects($this->once())
@@ -856,5 +900,23 @@ class ThemingDefaultsTest extends TestCase {
 
 		$this->template->set($setting, $value);
 		$this->assertEquals($expected, $setValue);
+	}
+
+	public function testIsAdminThemingDisabledWithDefault(): void {
+		$this->appConfig
+			->expects($this->once())
+			->method('getAppValueBool')
+			->with(ConfigLexicon::ADMIN_THEMING_DISABLED, false)
+			->willReturn(false);
+		$this->assertFalse($this->template->isAdminThemingDisabled());
+	}
+
+	public function testIsAdminThemingDisabledWithCustom(): void {
+		$this->appConfig
+			->expects($this->once())
+			->method('getAppValueBool')
+			->with(ConfigLexicon::ADMIN_THEMING_DISABLED, false)
+			->willReturn(true);
+		$this->assertTrue($this->template->isAdminThemingDisabled());
 	}
 }

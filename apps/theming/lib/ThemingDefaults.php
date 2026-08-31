@@ -102,11 +102,19 @@ class ThemingDefaults extends \OC_Defaults {
 	}
 
 	public function getImprintUrl(): string {
-		return $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_IMPRINT_URL, '');
+		$adminValue = $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_IMPRINT_URL, '');
+		if ($adminValue !== '') {
+			return $adminValue;
+		}
+		return $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_IMPRINT_URL_DEFAULT, '');
 	}
 
 	public function getPrivacyUrl(): string {
-		return $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_PRIVACY_URL, '');
+		$adminValue = $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_PRIVACY_URL, '');
+		if ($adminValue !== '') {
+			return $adminValue;
+		}
+		return $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_PRIVACY_URL_DEFAULT, '');
 	}
 
 	public function getDocBaseUrl(): string {
@@ -379,11 +387,22 @@ class ThemingDefaults extends \OC_Defaults {
 		}
 
 		$route = false;
-		if ($image === 'favicon.ico' && ($this->imageManager->canConvert('ICO') || $this->getCustomFavicon() !== null)) {
+		// Always use theming favicons for all apps to ensure consistent branding
+		if ($image === 'favicon.ico') {
 			$route = $this->urlGenerator->linkToRoute('theming.Icon.getFavicon', ['app' => $app]);
 		}
-		if (($image === 'favicon-touch.png' || $image === 'favicon-fb.png') && ($this->imageManager->canConvert('PNG') || $this->getCustomFavicon() !== null)) {
+		if ($image === 'favicon-touch.png' || $image === 'favicon-fb.png') {
 			$route = $this->urlGenerator->linkToRoute('theming.Icon.getTouchIcon', ['app' => $app]);
+		}
+		if ($image === 'favicon.svg' || $image === 'favicon.png') {
+			// Redirect to static theming favicon files
+			$route = $this->urlGenerator->linkTo('theming', 'img/' . $image);
+		}
+		if ($image === 'favicon-touch.svg') {
+			$route = $this->urlGenerator->linkTo('theming', 'img/favicon-touch.svg');
+		}
+		if ($image === 'favicon-mask.svg') {
+			$route = $this->urlGenerator->linkTo('theming', 'img/favicon.svg');
 		}
 		if ($image === 'manifest.json') {
 			try {
@@ -533,5 +552,12 @@ class ThemingDefaults extends \OC_Defaults {
 	 */
 	public function isUserThemingDisabled(): bool {
 		return $this->appConfig->getAppValueBool(ConfigLexicon::USER_THEMING_DISABLED, false);
+	}
+
+	/**
+	 * Has the admin disabled admin theming customization
+	 */
+	public function isAdminThemingDisabled(): bool {
+		return $this->appConfig->getAppValueBool(ConfigLexicon::ADMIN_THEMING_DISABLED, false);
 	}
 }
