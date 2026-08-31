@@ -412,14 +412,20 @@ jobs:
           JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
           ARTIFACTORY_REPOSITORY_SNAPSHOT: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}
           GITHUB_REF: ${{ github.ref }}
+          # Display-only copies of the two workflow_dispatch inputs. They differ from
+          # APPS_TO_REBUILD above only in their empty-value placeholder, and both are free
+          # text typed by whoever dispatched the run.
+          CACHE_VERSION_SUFFIX_DISPLAY: ${{ github.event.inputs.cache_version_suffix || '(none)' }}
+          APPS_TO_REBUILD_DISPLAY: ${{ github.event.inputs.apps_to_rebuild || '(none)' }}
+          MATRIX_JSON: ${{ steps.set_matrix.outputs.matrix }}
         run: |
           # Show effective cache version
-          echo "Base CACHE_VERSION: ${{ env.CACHE_VERSION }}"
-          echo "Cache version suffix: ${{ github.event.inputs.cache_version_suffix || '(none)' }}"
+          echo "Base CACHE_VERSION: ${CACHE_VERSION}"
+          echo "Cache version suffix: ${CACHE_VERSION_SUFFIX_DISPLAY}"
           echo "Effective CACHE_VERSION: ${CACHE_VERSION}"
-          echo "Apps to rebuild: ${{ github.event.inputs.apps_to_rebuild || '(none)' }}"
+          echo "Apps to rebuild: ${APPS_TO_REBUILD_DISPLAY}"
           echo ""
-          bash .github/scripts/detect-app-cache.sh '${{ steps.set_matrix.outputs.matrix }}'
+          bash .github/scripts/detect-app-cache.sh "$MATRIX_JSON"
 
   build-external-apps:
     runs-on: ubuntu-latest
@@ -440,11 +446,14 @@ jobs:
     steps:
       - name: Get app configuration from full matrix
         id: app-config
+        # FULL_MATRIX and APP_NAME come from the Makefile-generated app matrix, i.e. from
+        # repo files a PR author can edit. Interpolated into single quotes as they were, one
+        # apostrophe in an app name breaks out of the string.
+        env:
+          FULL_MATRIX: ${{ needs.prepare-matrix.outputs.external_apps_matrix }}
+          APP_NAME: ${{ matrix.app_info.name }}
+          APP_SHA: ${{ matrix.app_info.sha }}
         run: |
-          # Get the full matrix to look up app configuration
-          FULL_MATRIX='${{ needs.prepare-matrix.outputs.external_apps_matrix }}'
-          APP_NAME='${{ matrix.app_info.name }}'
-
           # Find the app configuration in the full matrix
           APP_CONFIG=$(echo "$FULL_MATRIX" | jq -c --arg name "$APP_NAME" '.[] | select(.name == $name)')
 
@@ -464,7 +473,7 @@ jobs:
           echo "has-npm=$HAS_NPM" >> $GITHUB_OUTPUT
           echo "has-composer=$HAS_COMPOSER" >> $GITHUB_OUTPUT
           echo "makefile-target=$MAKEFILE_TARGET" >> $GITHUB_OUTPUT
-          echo "Building $APP_NAME from $APP_PATH (SHA: ${{ matrix.app_info.sha }})"
+          echo "Building $APP_NAME from $APP_PATH (SHA: ${APP_SHA})"
 
       - name: Checkout server
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
@@ -500,14 +509,23 @@ jobs:
             ${{ runner.os }}-composer-${{ matrix.app_info.name }}-
 
       - name: Build ${{ matrix.app_info.name }} app
-        run: make -f IONOS/Makefile ${{ steps.app-config.outputs.makefile-target }}
+        # The target name came straight off the matrix into the command line, unquoted and
+        # with no env: at all. Quoting is right here: a make target is a single word, so
+        # suppressing word-splitting is the intended behaviour.
+        env:
+          MAKEFILE_TARGET: ${{ steps.app-config.outputs.makefile-target }}
+        run: make -f IONOS/Makefile "$MAKEFILE_TARGET"
 
       - name: Report build completion
         if: success()
+        env:
+          APP_NAME: ${{ matrix.app_info.name }}
+          APP_SHA: ${{ matrix.app_info.sha }}
+          APP_PATH: ${{ steps.app-config.outputs.path }}
         run: |
-          echo "### ✅ Built ${{ matrix.app_info.name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **SHA:** \`${{ matrix.app_info.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Path:** ${{ steps.app-config.outputs.path }}" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Built ${APP_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA:** \`${APP_SHA}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Path:** ${APP_PATH}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** Success" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
@@ -542,14 +560,16 @@ jobs:
           run-id: ${{ github.run_id }}
 
       - name: Push ${{ matrix.app_info.name }} to JFrog
+        env:
+          APP_NAME: ${{ matrix.app_info.name }}
+          APP_SHA: ${{ matrix.app_info.sha }}
+          APP_PATH: ${{ steps.app-config.outputs.path }}
+          EFFECTIVE_CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          JOB_HTML_URL: ${{ steps.get_job_data.outputs.job_html_url }}
         run: |
           set -e
-          APP_NAME="${{ matrix.app_info.name }}"
-          APP_SHA="${{ matrix.app_info.sha }}"
-          APP_PATH="${{ steps.app-config.outputs.path }}"
-
-          # Use precomputed effective cache version
-          EFFECTIVE_CACHE_VERSION="${{ needs.prepare-matrix.outputs.effective_cache_version }}"
 
           echo "=== JFrog Upload Debug Info ==="
           echo "📦 Packaging $APP_NAME for JFrog upload..."
@@ -557,7 +577,7 @@ jobs:
           echo "App SHA: $APP_SHA"
           echo "App Path: $APP_PATH"
           echo "Cache Version: $EFFECTIVE_CACHE_VERSION"
-          echo "Repository: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
+          echo "Repository: ${ARTIFACTORY_REPOSITORY_SNAPSHOT}"
           echo "==============================="
 
           # Verify app path exists
@@ -588,17 +608,17 @@ jobs:
 
           # Upload to JFrog - store in snapshot repo under dev/apps/
           # Include CACHE_VERSION in path to enable complete cache invalidation
-          JFROG_PATH="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${ARCHIVE_NAME}"
+          JFROG_PATH="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${ARCHIVE_NAME}"
 
           # Build properties for artifact metadata
           JFROG_PROPS_LIST=()
           JFROG_PROPS_LIST+=("app.name=${APP_NAME}")
           JFROG_PROPS_LIST+=("app.sha=${APP_SHA}")
-          JFROG_PROPS_LIST+=("vcs.branch=${{ github.ref_name }}")
-          JFROG_PROPS_LIST+=("vcs.revision=${{ github.sha }}")
+          JFROG_PROPS_LIST+=("vcs.branch=${REF}")
+          JFROG_PROPS_LIST+=("vcs.revision=${SHA}")
 
           # Add job URL if available
-          JOB_URL="${{ steps.get_job_data.outputs.job_html_url }}"
+          JOB_URL="$JOB_HTML_URL"
           if [ -n "$JOB_URL" ]; then
             JFROG_PROPS_LIST+=("job.html_url=${JOB_URL}")
           fi
@@ -680,13 +700,25 @@ jobs:
           jf rt ping
 
       - name: Restore all apps from cache and JFrog
+        # The matrix JSON blobs were interpolated into single-quoted assignments, where one
+        # apostrophe in an app name breaks out of the string. They are generated from repo
+        # files a PR author can edit.
+        env:
+          # GH_TOKEN was declared in a second env: block after the run: below. Merged here:
+          # two env: keys on one step is a YAML duplicate key, and the later one wins.
+          GH_TOKEN: ${{ github.token }}
+          HAS_APPS_TO_RESTORE: ${{ needs.prepare-matrix.outputs.has_apps_to_restore }}
+          HAS_APPS_TO_BUILD: ${{ needs.prepare-matrix.outputs.has_apps_to_build }}
+          APPS_TO_RESTORE: ${{ needs.prepare-matrix.outputs.apps_to_restore }}
+          APPS_TO_BUILD: ${{ needs.prepare-matrix.outputs.apps_to_build }}
+          FULL_MATRIX: ${{ needs.prepare-matrix.outputs.external_apps_matrix }}
+          EFFECTIVE_CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}
         run: |
           set -euo pipefail
 
           # Restore apps that are in cache (from apps_to_restore)
-          if [ "${{ needs.prepare-matrix.outputs.has_apps_to_restore }}" == "true" ]; then
+          if [ "$HAS_APPS_TO_RESTORE" == "true" ]; then
             echo "📦 Restoring cached apps..."
-            APPS_TO_RESTORE='${{ needs.prepare-matrix.outputs.apps_to_restore }}'
 
             # Process each app in the restore list
             echo "$APPS_TO_RESTORE" | jq -c '.[]' | while read -r app_json; do
@@ -757,12 +789,9 @@ jobs:
           fi
 
           # Also restore newly built apps from JFrog (from apps_to_build)
-          if [ "${{ needs.prepare-matrix.outputs.has_apps_to_build }}" == "true" ]; then
+          if [ "$HAS_APPS_TO_BUILD" == "true" ]; then
             echo ""
             echo "📦 Restoring newly built apps from JFrog..."
-            APPS_TO_BUILD='${{ needs.prepare-matrix.outputs.apps_to_build }}'
-            FULL_MATRIX='${{ needs.prepare-matrix.outputs.external_apps_matrix }}'
-            EFFECTIVE_CACHE_VERSION="${{ needs.prepare-matrix.outputs.effective_cache_version }}"
 
             # Process each app in the build list
             echo "$APPS_TO_BUILD" | jq -c '.[]' | while read -r app_json; do
@@ -783,7 +812,7 @@ jobs:
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
               # Construct JFrog path matching what build-external-apps uploaded
-              JFROG_PATH="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${APP_SHA}.tar.gz"
+              JFROG_PATH="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${APP_SHA}.tar.gz"
               ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
 
               echo "📥 Downloading from JFrog: $JFROG_PATH"
@@ -816,8 +845,6 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "✅ All apps restored successfully"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       - name: Set up node with version from package.json's engines
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # 6.4.0
@@ -861,14 +888,16 @@ jobs:
       # IONOS Customization: Inject build number for production traceability
       # This is specific to IONOS Nextcloud Workspace and not part of upstream Nextcloud
       - name: Inject build number
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          echo "${{ github.run_number }}" > .buildnumber
-          echo "✅ Build number injected: ${{ github.run_number }}"
+          echo "$RUN_NUMBER" > .buildnumber
+          echo "✅ Build number injected: ${RUN_NUMBER}"
           echo "📄 File created: .buildnumber"
           cat .buildnumber
 
       - name: Zip dependencies
-        run: make -f IONOS/Makefile zip_dependencies TARGET_PACKAGE_NAME=${{ env.TARGET_PACKAGE_NAME }}
+        run: make -f IONOS/Makefile zip_dependencies TARGET_PACKAGE_NAME="$TARGET_PACKAGE_NAME"
 
       - name: Get NC version
         id: get_nc_version
@@ -1145,9 +1174,9 @@ jobs:
         run: |
           cat >Dockerfile << EOF
           FROM busybox as builder
-          COPY ./${{ env.TARGET_PACKAGE_NAME }} /
+          COPY ./${TARGET_PACKAGE_NAME} /
           WORKDIR /builder
-          RUN unzip /${{ env.TARGET_PACKAGE_NAME }} -d /builder
+          RUN unzip /${TARGET_PACKAGE_NAME} -d /builder
 
           FROM scratch
           WORKDIR /app
