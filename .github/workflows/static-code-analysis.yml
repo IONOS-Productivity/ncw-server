@@ -210,6 +210,8 @@ jobs:
       - name: Composer install
         working-directory: apps-external/${{ matrix.app }}
         run: composer install --no-interaction --prefer-dist
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
 
       - name: Locate psalm binary
         id: psalm-bin
