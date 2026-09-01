@@ -209,7 +209,7 @@ jobs:
 
       - name: Composer install
         working-directory: apps-external/${{ matrix.app }}
-        run: composer install --no-interaction --prefer-dist
+        run: composer install --no-interaction --prefer-dist --ignore-platform-reqs
         env:
           COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
 
