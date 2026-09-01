@@ -1,0 +1,138 @@
+# SPDX-FileCopyrightText: 2024 IONOS SE and contributors
+# SPDX-License-Identifier: MIT
+name: IONOS SAST – apps-external
+
+on:
+  pull_request:
+  push:
+    branches:
+      - ionos-dev
+      - 'rc/**'
+    paths:
+      - '.github/workflows/ionos-sast-apps.yml'
+      - 'apps-external/**'
+      - '**.php'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ionos-sast-apps-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # Discovers apps-external submodules that contain a psalm.xml and builds
+  # the matrix for the taint-analysis job below.
+  generate-sast-matrix:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Discover apps with psalm.xml
+        id: set-matrix
+        run: |
+          apps=$(find apps-external -maxdepth 2 -name psalm.xml \
+            | sed 's|apps-external/||;s|/psalm.xml||' \
+            | sort | jq -R . | jq -sc .)
+          echo "matrix=$apps" >> "$GITHUB_OUTPUT"
+
+  # Psalm taint analysis (security) for each app in apps-external.
+  # Runs per-app so each app uses its own psalm.xml and vendor directory.
+  # Non-blocking (continue-on-error) while upstream apps still have baseline findings.
+  # Remove continue-on-error once all apps are clean or fully baselined.
+  static-code-analysis-security-apps:
+    runs-on: ubuntu-latest
+    name: Psalm taint analysis - ${{ matrix.app }}
+    needs: generate-sast-matrix
+
+    permissions:
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.generate-sast-matrix.outputs.matrix) }}
+
+    continue-on-error: true
+
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@cf4cade2721270509d5b1c766ab3549210a39a2a #v2.33.0
+        with:
+          php-version: '8.1'
+          extensions: ctype,curl,dom,fileinfo,gd,imagick,intl,json,mbstring,openssl,pdo_sqlite,posix,sqlite,xml,zip
+          coverage: none
+
+      - name: Composer install
+        working-directory: apps-external/${{ matrix.app }}
+        run: composer install --no-interaction --prefer-dist --ignore-platform-reqs
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+
+      - name: Locate psalm binary
+        id: psalm-bin
+        working-directory: apps-external/${{ matrix.app }}
+        run: |
+          if [ -f vendor/bin/psalm ]; then
+            echo "bin=vendor/bin/psalm" >> "$GITHUB_OUTPUT"
+          elif [ -f vendor/bin/psalm.phar ]; then
+            echo "bin=vendor/bin/psalm.phar" >> "$GITHUB_OUTPUT"
+          elif [ -f vendor-bin/psalm/vendor/bin/psalm ]; then
+            echo "bin=vendor-bin/psalm/vendor/bin/psalm" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Psalm binary not found in apps-external/${{ matrix.app }} after composer install"
+            exit 1
+          fi
+
+      - name: Psalm taint analysis
+        working-directory: apps-external/${{ matrix.app }}
+        run: |
+          ${{ steps.psalm-bin.outputs.bin }} \
+            --taint-analysis \
+            --no-cache \
+            --threads=1 \
+            --monochrome \
+            --no-progress \
+            --output-format=github \
+            --report=psalm-taint-results.sarif
+        continue-on-error: true
+
+      - name: Fix invalid region values in SARIF
+        if: always() && hashFiles(format('apps-external/{0}/psalm-taint-results.sarif', matrix.app)) != ''
+        working-directory: apps-external/${{ matrix.app }}
+        run: |
+          jq '[
+            "startLine", "startColumn", "endLine", "endColumn"
+          ] as $fields |
+          walk(
+            if type == "object" then
+              reduce $fields[] as $f (.; if has($f) and ("number" == (.[$f] | type)) and .[$f] < 1 then .[$f] = 1 else . end)
+            else . end
+          )' \
+            psalm-taint-results.sarif > psalm-taint-results.sarif.tmp \
+            && mv psalm-taint-results.sarif.tmp psalm-taint-results.sarif
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always() && hashFiles(format('apps-external/{0}/psalm-taint-results.sarif', matrix.app)) != ''
+        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3
+        with:
+          sarif_file: apps-external/${{ matrix.app }}/psalm-taint-results.sarif
+          category: psalm-taint-${{ matrix.app }}
