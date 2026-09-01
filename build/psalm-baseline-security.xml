@@ -12,7 +12,6 @@
   </file>
   <file src="apps/theming/lib/IconBuilder.php">
     <TaintedFile>
-      <code><![CDATA[$appIcon]]></code>
       <code><![CDATA[$imageFile]]></code>
     </TaintedFile>
   </file>
