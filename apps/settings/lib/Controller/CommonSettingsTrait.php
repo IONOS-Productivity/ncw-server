@@ -142,8 +142,12 @@ trait CommonSettingsTrait {
 		$user = $this->userSession->getUser();
 		assert($user !== null, 'No user logged in for settings');
 
-		$this->declarativeSettingsManager->loadSchemas();
-		$declarativeSettings = $this->declarativeSettingsManager->getFormsWithValues($user, $type, $section);
+		$declarativeSettings = [];
+
+		if ($type === 'admin' && $this->groupManager->isAdmin($user->getUID())) {
+			$this->declarativeSettingsManager->loadSchemas();
+			$declarativeSettings = $this->declarativeSettingsManager->getFormsWithValues($user, $type, $section);
+		}
 
 		foreach ($declarativeSettings as &$form) {
 			foreach ($form['fields'] as &$field) {
