@@ -11,6 +11,7 @@ use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\Files\IRootFolder;
+use OCP\IConfig;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
 use OCP\Settings\ISettings;
@@ -26,6 +27,7 @@ class ServerDevNotice implements ISettings {
 		private IUserSession $userSession,
 		private IInitialState $initialState,
 		private IURLGenerator $urlGenerator,
+		private IConfig $config,
 	) {
 	}
 
@@ -60,6 +62,10 @@ class ServerDevNotice implements ISettings {
 	 */
 	public function getSection(): ?string {
 		if ($this->registry->delegateHasValidSubscription()) {
+			return null;
+		}
+
+		if ($this->config->getSystemValueBool('settings.hide-dev-notice')) {
 			return null;
 		}
 
