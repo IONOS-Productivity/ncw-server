@@ -11,13 +11,16 @@
 		type="error" />
 	<template v-else>
 		<AdminSectionTheming />
-		<AdminSectionThemingAdvanced />
+		<!-- IONOS: hide colors/background/logo/favicon customization and the
+		     "disable user theming" toggle when the admin has disabled admin
+		     theming customization (disable_admin_theming) -->
+		<AdminSectionThemingAdvanced v-if="!adminThemingDisabled" />
 	</template>
 	<AdminSectionAppMenu />
 </template>
 
 <script setup lang="ts">
-import type { AdminThemingInfo } from '../types.d.ts'
+import type { AdminThemingInfo, AdminThemingParameters } from '../types.d.ts'
 
 import { loadState } from '@nextcloud/initial-state'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
@@ -26,4 +29,5 @@ import AdminSectionTheming from '../components/AdminSectionTheming.vue'
 import AdminSectionThemingAdvanced from '../components/AdminSectionThemingAdvanced.vue'
 
 const { isThemeable, notThemeableErrorMessage } = loadState<AdminThemingInfo>('theming', 'adminThemingInfo')
+const { adminThemingDisabled } = loadState<AdminThemingParameters>('theming', 'adminThemingParameters')
 </script>

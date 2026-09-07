@@ -21,6 +21,14 @@ export interface AdminThemingParameters {
 	url: string
 	disableUserTheming: boolean
 	defaultApps: string[]
+	/** IONOS: whether the admin has disabled admin theming customization */
+	adminThemingDisabled: boolean
+	/** IONOS: deployment-provided default instance name */
+	defaultName: string
+	/** IONOS: deployment-provided default instance URL */
+	defaultUrl: string
+	/** IONOS: deployment-provided default instance slogan */
+	defaultSlogan: string
 }
 
 /**
