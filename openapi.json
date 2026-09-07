@@ -34855,20 +34855,16 @@
                     "200": {
                         "description": "Favicon returned",
                         "content": {
-                            "image/x-icon": {
+                            "image/png": {
                                 "schema": {
                                     "type": "string",
                                     "format": "binary"
                                 }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Favicon not found",
-                        "content": {
-                            "text/html": {
+                            },
+                            "image/x-icon": {
                                 "schema": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "format": "binary"
                                 }
                             }
                         }
@@ -34922,22 +34918,6 @@
                                 "schema": {
                                     "type": "string",
                                     "format": "binary"
-                                }
-                            },
-                            "image/x-icon": {
-                                "schema": {
-                                    "type": "string",
-                                    "format": "binary"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Touch icon not found",
-                        "content": {
-                            "text/html": {
-                                "schema": {
-                                    "type": "string"
                                 }
                             }
                         }
