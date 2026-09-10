@@ -4,6 +4,13 @@ name: IONOS SAST – apps-external
 
 on:
   pull_request:
+    branches:
+      - ionos-dev
+      - 'rc/**'
+    paths:
+      - '.github/workflows/ionos-sast-apps.yml'
+      - 'apps-external/**'
+      - '**.php'
   push:
     branches:
       - ionos-dev
