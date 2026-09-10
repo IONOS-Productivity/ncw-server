@@ -9,6 +9,7 @@ on:
       - main
       - master
       - stable*
+      - 'rc/**'
     paths:
       - '.github/workflows/static-code-analysis.yml'
       - '**.php'
@@ -56,6 +57,10 @@ jobs:
     runs-on: ubuntu-latest
 
     if: ${{ github.repository_owner != 'nextcloud-gmbh' }}
+
+    permissions:
+      contents: read
+      security-events: write
 
     steps:
       - name: Checkout code
