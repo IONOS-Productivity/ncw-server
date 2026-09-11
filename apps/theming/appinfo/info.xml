@@ -36,6 +36,7 @@
 
 	<settings>
 		<admin>OCA\Theming\Settings\Admin</admin>
+		<admin>OCA\Theming\Settings\AdminLegalUrls</admin>
 		<admin-section>OCA\Theming\Settings\AdminSection</admin-section>
 		<personal>OCA\Theming\Settings\Personal</personal>
 		<personal-section>OCA\Theming\Settings\PersonalSection</personal-section>

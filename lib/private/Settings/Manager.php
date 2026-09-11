@@ -10,6 +10,7 @@ namespace OC\Settings;
 use Closure;
 use OCP\AppFramework\QueryException;
 use OCP\Group\ISubAdmin;
+use OCP\IConfig;
 use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IServerContainer;
@@ -46,6 +47,7 @@ class Manager implements IManager {
 		private AuthorizedGroupMapper $mapper,
 		private IGroupManager $groupManager,
 		private ISubAdmin $subAdmin,
+		private IConfig $config,
 	) {
 	}
 
@@ -277,6 +279,11 @@ class Manager implements IManager {
 	 */
 	public function getAllowedAdminSettings(string $section, IUser $user): array {
 		$isAdmin = $this->groupManager->isAdmin($user->getUID());
+
+		if ($this->config->getSystemValueBool('settings.only-delegated-settings')) {
+			$isAdmin = false;
+		}
+
 		if ($isAdmin) {
 			$appSettings = $this->getSettings('admin', $section);
 		} else {
