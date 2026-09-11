@@ -60,13 +60,13 @@ $vendor = 'nextcloud';
 //   Example: 12345678901
 //
 // Result:
-//   Without .buildnumber: $OC_Version = [33, 0, 8, 2]
-//   With .buildnumber:    $OC_Version = [33, 0, 8, 2, 12345678901]
+//   Without .buildnumber: $OC_Version = [33, 0, 9, 1]
+//   With .buildnumber:    $OC_Version = [33, 0, 9, 1, 12345678901]
 //
 // Accessed via:
 //   - ServerVersion::getBuildId() -> 12345678901
-//   - ServerVersion::getHumanVersion() -> "33.0.8 (12345678901)"
-//   - ServerVersion::getVersion() -> [33, 0, 8, 2, 12345678901]
+//   - ServerVersion::getHumanVersion() -> "33.0.9 (12345678901)"
+//   - ServerVersion::getVersion() -> [33, 0, 9, 1, 12345678901]
 //
 // Workflow URL Construction:
 //   https://github.com/{org}/{repo}/actions/runs/{buildId}
