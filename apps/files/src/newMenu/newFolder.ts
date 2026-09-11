@@ -44,8 +44,8 @@ export const entry = {
 	displayName: t('files', 'New folder'),
 	enabled: (context: Folder) => Boolean(context.permissions & Permission.CREATE) && Boolean(context.permissions & Permission.READ),
 
-	// Make the svg icon color match the primary element color
-	iconSvgInline: FolderPlusSvg.replace(/viewBox/gi, 'style="color: var(--color-primary-element)" viewBox'),
+	// Make the svg icon color match the primary element color; mark as decorative for AT
+	iconSvgInline: FolderPlusSvg.replace(/viewBox/gi, 'aria-hidden="true" style="color: var(--color-primary-element)" viewBox'),
 	order: 0,
 
 	async handler(context: Folder, content: Node[]) {
