@@ -129,13 +129,19 @@ jobs:
 
       - name: Determine PHP version from NC major version
         id: php-version
-        # Computed once here and shared via job output so every downstream job uses the same value
+        # Computed once here and shared via job output so every downstream job uses the same value.
+        # The NC-major -> PHP-version correlation lives in nc-php-version-matrix.json, not here, so
+        # a new major (or a PHP bump for an existing one, e.g. 8.5) is a one-line file edit rather
+        # than a workflow change. A major missing from that file fails loudly instead of silently
+        # reusing an older PHP version.
         run: |
-          NC_MAJOR=$(grep -oP '\$OC_Version\s*=\s*\[\K[0-9]+' version.php)
-          if [ "$NC_MAJOR" -ge 33 ]; then
-            PHP_VERSION="8.4"
-          else
-            PHP_VERSION="8.3"
+          # Anchored to line start so the doc comments further down in version.php (which also
+          # mention "$OC_Version = [...]" as plain text) aren't matched alongside the real one.
+          NC_MAJOR=$(grep -oP '^\$OC_Version\s*=\s*\[\K[0-9]+' version.php)
+          PHP_VERSION=$(jq --raw-output --arg major "$NC_MAJOR" '.[$major] // empty' .github/nc-php-version-matrix.json)
+          if [ -z "$PHP_VERSION" ]; then
+            echo "::error::No PHP version mapping for NC major $NC_MAJOR in .github/nc-php-version-matrix.json. Add an entry there."
+            exit 1
           fi
           echo "php_version=$PHP_VERSION" >> $GITHUB_OUTPUT
 
