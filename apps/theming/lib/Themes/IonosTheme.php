@@ -290,6 +290,7 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--color-border' => 'light-dark(' . $this->util->darken($colorMainBackground, 7) . ', rgba(255, 255, 255, 0.1))',
 			'--color-border-dark' => $this->util->darken($colorMainBackground, 14),
 			'--color-border-maxcontrast' => $this->util->darken($colorMainBackground, 51),
+			'--header-menu-icon-mask' => 'none',
 		];
 
 		return array_merge(
