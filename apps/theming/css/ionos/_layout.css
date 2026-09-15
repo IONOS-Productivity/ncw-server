@@ -86,6 +86,11 @@
 	fill: var(--ion-text);
 }
 
+.header-end .unified-search-menu .button-vue__icon svg,
+.header-end .contactsmenu .contactsmenu__trigger-icon svg {
+	fill: var(--ion-text);
+}
+
 
 #content-vue {
 	margin: var(--header-height) 0 0 0;
