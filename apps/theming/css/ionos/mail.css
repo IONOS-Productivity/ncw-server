@@ -1,0 +1,17 @@
+/*
+ * SPDX-FileCopyrightText: 2026 STRATO GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* :has() scopes to mail only; padding-top creates a header band for the compose modal's absolute-positioned buttons. */
+body:has(.content.mail-content.app-mail) .modal-wrapper .modal-container {
+	padding: 44px 12px 12px;
+}
+
+body:has(.content.mail-content.app-mail) .modal-wrapper .modal-container .maximize-button {
+	inset-inline-end: 52px;
+}
+
+body:has(.content.mail-content.app-mail) .modal-wrapper .modal-container .minimize-button {
+	inset-inline-end: 96px;
+}
