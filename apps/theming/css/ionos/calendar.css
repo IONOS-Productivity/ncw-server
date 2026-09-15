@@ -2,6 +2,10 @@
  * SPDX-FileCopyrightText: 2026 STRATO GmbH
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+.app-calendar .datepicker-button-section .button {
+	border-color: transparent;
+}
+
 .app-calendar.content {
 	.fc-daygrid-day.fc-day {
 		&.fc-day-other {
