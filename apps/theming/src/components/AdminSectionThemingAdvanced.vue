@@ -22,6 +22,7 @@ import { refreshStyles } from '../utils/refreshStyles.ts'
 
 const { defaultBackgroundColor } = loadState<AdminThemingInfo>('theming', 'adminThemingInfo')
 const adminThemingParameters = loadState<AdminThemingParameters>('theming', 'adminThemingParameters')
+const { adminThemingDisabled } = adminThemingParameters
 
 const userThemingDisabled = ref(adminThemingParameters.disableUserTheming)
 const { isSaving } = useAdminThemingValue('disableUserTheming', userThemingDisabled, false)
@@ -68,41 +69,47 @@ async function toggleBackground(value: boolean) {
 <template>
 	<NcSettingsSection :name="t('theming', 'Background and color')">
 		<div :class="$style.adminSectionThemingAdvanced">
-			<!-- primary color -->
-			<ColorPickerField
-				name="primaryColor"
-				:label="t('theming', 'Primary color')"
-				defaultValue="#00679e"
-				@updated="refreshStyles">
-				<template #description>
-					{{ t('theming', 'Set the default primary color, used to highlight important elements.') }}
-					{{ t('theming', 'The color used for elements such as primary buttons might differ a bit as it gets adjusted to fulfill accessibility requirements.') }}
-				</template>
-			</ColorPickerField>
-			<!-- background color -->
-			<ColorPickerField
-				name="backgroundColor"
-				:label="t('theming', 'Background color')"
-				:defaultValue="defaultBackgroundColor"
-				@updated="refreshStyles">
-				<template #description>
-					{{ t('theming', 'When no background image is set the background color will be used.') }}
-					{{ t('theming', 'Otherwise the background color is by default generated from the background image, but can be adjusted to fine tune the color of the navigation icons.') }}
-				</template>
-			</ColorPickerField>
-			<!-- background and logo -->
-			<NcCheckboxRadioSwitch
-				v-model="removeBackgroundImage"
-				type="switch"
-				:loading="isRemovingBackgroundImage"
-				:description="t('theming', 'Use a plain background color instead of a background image.')">
-				{{ t('theming', 'Remove background image') }}
-			</NcCheckboxRadioSwitch>
-			<FileInputField
-				name="background"
-				:disabled="removeBackgroundImage"
-				:label="t('theming', 'Background image')"
-				@updated="refreshStyles" />
+			<!-- IONOS (NSW-43): colors/background must not be changeable by admin or user
+			     when admin theming is disabled - logo, favicon, and the nav-bar logo stay
+			     editable regardless, mirroring the v32 gate (7e447f843a3) rather than
+			     hiding this whole component at the call site -->
+			<template v-if="!adminThemingDisabled">
+				<!-- primary color -->
+				<ColorPickerField
+					name="primaryColor"
+					:label="t('theming', 'Primary color')"
+					defaultValue="#00679e"
+					@updated="refreshStyles">
+					<template #description>
+						{{ t('theming', 'Set the default primary color, used to highlight important elements.') }}
+						{{ t('theming', 'The color used for elements such as primary buttons might differ a bit as it gets adjusted to fulfill accessibility requirements.') }}
+					</template>
+				</ColorPickerField>
+				<!-- background color -->
+				<ColorPickerField
+					name="backgroundColor"
+					:label="t('theming', 'Background color')"
+					:defaultValue="defaultBackgroundColor"
+					@updated="refreshStyles">
+					<template #description>
+						{{ t('theming', 'When no background image is set the background color will be used.') }}
+						{{ t('theming', 'Otherwise the background color is by default generated from the background image, but can be adjusted to fine tune the color of the navigation icons.') }}
+					</template>
+				</ColorPickerField>
+				<!-- background -->
+				<NcCheckboxRadioSwitch
+					v-model="removeBackgroundImage"
+					type="switch"
+					:loading="isRemovingBackgroundImage"
+					:description="t('theming', 'Use a plain background color instead of a background image.')">
+					{{ t('theming', 'Remove background image') }}
+				</NcCheckboxRadioSwitch>
+				<FileInputField
+					name="background"
+					:disabled="removeBackgroundImage"
+					:label="t('theming', 'Background image')"
+					@updated="refreshStyles" />
+			</template>
 			<FileInputField
 				name="favicon"
 				:label="t('theming', 'Favicon')" />
@@ -114,14 +121,16 @@ async function toggleBackground(value: boolean) {
 				name="logoheader"
 				:label="t('theming', 'Navigation bar logo')"
 				@updated="refreshStyles" />
-			<hr>
-			<NcCheckboxRadioSwitch
-				v-model="userThemingDisabled"
-				type="switch"
-				:loading="isSaving"
-				:description="t('theming', 'Although you can select and customize your instance, users can change their background and colors. If you want to enforce your customization, you can toggle this on.')">
-				{{ t('theming', 'Disable user theming') }}
-			</NcCheckboxRadioSwitch>
+			<template v-if="!adminThemingDisabled">
+				<hr>
+				<NcCheckboxRadioSwitch
+					v-model="userThemingDisabled"
+					type="switch"
+					:loading="isSaving"
+					:description="t('theming', 'Although you can select and customize your instance, users can change their background and colors. If you want to enforce your customization, you can toggle this on.')">
+					{{ t('theming', 'Disable user theming') }}
+				</NcCheckboxRadioSwitch>
+			</template>
 		</div>
 	</NcSettingsSection>
 </template>

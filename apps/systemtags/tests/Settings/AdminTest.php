@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * SPDX-FileCopyrightText: 2016 Nextcloud GmbH and Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
@@ -10,25 +12,29 @@ use OCA\SystemTags\Settings\Admin;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
 use OCP\IAppConfig;
+use OCP\IL10N;
+use OCP\Settings\IDelegatedSettings;
+use OCP\Settings\ISettings;
+use PHPUnit\Framework\MockObject\MockObject;
 use Test\TestCase;
 
 class AdminTest extends TestCase {
-	/** @var Admin */
-	private $admin;
-	/** @var IAppConfig|\PHPUnit\Framework\MockObject\MockObject */
-	private $appConfig;
-	/** @var IInitialState|\PHPUnit\Framework\MockObject\MockObject */
-	private $initialState;
+	private IAppConfig&MockObject $appConfig;
+	private IInitialState&MockObject $initialState;
+	private IL10N&MockObject $l10n;
+	private Admin $admin;
 
 	protected function setUp(): void {
 		parent::setUp();
 
 		$this->appConfig = $this->createMock(IAppConfig::class);
 		$this->initialState = $this->createMock(IInitialState::class);
+		$this->l10n = $this->createMock(IL10N::class);
 
 		$this->admin = new Admin(
 			$this->appConfig,
-			$this->initialState
+			$this->initialState,
+			$this->l10n,
 		);
 	}
 
@@ -66,5 +72,27 @@ class AdminTest extends TestCase {
 
 	public function testGetPriority(): void {
 		$this->assertSame(70, $this->admin->getPriority());
+	}
+
+	public function testGetName(): void {
+		$translatedName = 'Collaborative tags';
+		$this->l10n->expects($this->once())
+			->method('t')
+			->with('Collaborative tags')
+			->willReturn($translatedName);
+
+		$this->assertSame($translatedName, $this->admin->getName());
+	}
+
+	public function testGetAuthorizedAppConfig(): void {
+		$this->assertSame(
+			['systemtags' => ['/^restrict_creation_to_admin$/']],
+			$this->admin->getAuthorizedAppConfig(),
+		);
+	}
+
+	public function testImplementsIDelegatedSettings(): void {
+		$this->assertInstanceOf(IDelegatedSettings::class, $this->admin);
+		$this->assertInstanceOf(ISettings::class, $this->admin);
 	}
 }

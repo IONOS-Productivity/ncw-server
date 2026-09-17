@@ -11,6 +11,10 @@
 		type="error" />
 	<template v-else>
 		<AdminSectionTheming />
+		<!-- IONOS (NSW-43): AdminSectionThemingAdvanced gates its own
+		     colors/background elements internally when disable_admin_theming
+		     is set - logo/favicon/nav-bar-logo must stay editable, so this
+		     component is never hidden wholesale at the call site -->
 		<AdminSectionThemingAdvanced />
 	</template>
 	<AdminSectionAppMenu />

@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import type { AdminThemingInfo } from '../types.d.ts'
+import type { AdminThemingInfo, AdminThemingParameters } from '../types.d.ts'
 
 import { loadState } from '@nextcloud/initial-state'
 import { t } from '@nextcloud/l10n'
@@ -12,6 +12,10 @@ import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import TextField from './admin/TextField.vue'
 
 const ADMIN_INFO = loadState<AdminThemingInfo>('theming', 'adminThemingInfo')
+// IONOS: deployment-provided defaults (name/url/slogan), used instead of the
+// upstream "Nextcloud" defaults so an admin's "reset to default" restores the
+// deployment's own branding rather than vanilla Nextcloud's.
+const ADMIN_PARAMS = loadState<AdminThemingParameters>('theming', 'adminThemingParameters')
 </script>
 
 <template>
@@ -25,19 +29,19 @@ const ADMIN_INFO = loadState<AdminThemingInfo>('theming', 'adminThemingInfo')
 			<TextField
 				name="name"
 				:label="t('theming', 'Name')"
-				defaultValue="Nextcloud"
+				:defaultValue="ADMIN_PARAMS.defaultName"
 				maxlength="250" />
 			<TextField
 				name="url"
 				:label="t('theming', 'Web link')"
-				defaultValue="https://nextcloud.com"
+				:defaultValue="ADMIN_PARAMS.defaultUrl"
 				placeholder="https://…"
 				type="url"
 				maxlength="500" />
 			<TextField
 				name="slogan"
 				:label="t('theming', 'Slogan')"
-				:defaultValue="t('settings', 'a safe home for all your data')"
+				:defaultValue="ADMIN_PARAMS.defaultSlogan"
 				maxlength="500" />
 			<hr>
 
