@@ -123,7 +123,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
-          submodules: true
+          submodules: recursive
           fetch-depth: 1  # Shallow clone - only need current submodule SHAs for cache detection
 
       # Runs in the earliest job, right after checkout, so a mismatched lane fails in
@@ -478,7 +478,7 @@ jobs:
       - name: Checkout server
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
-          submodules: true
+          submodules: recursive
           fetch-depth: 1
 
       - name: Set up node with version from package.json's engines
@@ -706,7 +706,7 @@ jobs:
       - name: Checkout server
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
-          submodules: true
+          submodules: recursive
           fetch-depth: 1
 
       - name: Setup JFrog CLI
