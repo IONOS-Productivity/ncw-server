@@ -506,8 +506,30 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # 6.4.0
         with:
           node-version-file: "package.json"
-          cache: 'npm'
-          cache-dependency-path: ${{ steps.app-config.outputs.path }}/package-lock.json
+
+      - name: Detect npm lockfile
+        if: steps.app-config.outputs.has-npm == 'true'
+        id: npm-lockfile
+        env:
+          APP_PATH: ${{ steps.app-config.outputs.path }}
+        run: |
+          if [ -f "$APP_PATH/package-lock.json" ]; then
+            echo "path=$APP_PATH/package-lock.json" >> "$GITHUB_OUTPUT"
+          elif [ -f "$APP_PATH/npm-shrinkwrap.json" ]; then
+            echo "path=$APP_PATH/npm-shrinkwrap.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No npm lockfile found for $APP_PATH; npm cache disabled"
+            echo "path=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache npm dependencies for ${{ matrix.app_info.name }}
+        if: steps.app-config.outputs.has-npm == 'true' && steps.npm-lockfile.outputs.path != '' && github.event.inputs.force_rebuild != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # 6.1.0
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ matrix.app_info.name }}-${{ hashFiles(steps.npm-lockfile.outputs.path) }}
+          restore-keys: |
+            ${{ runner.os }}-npm-${{ matrix.app_info.name }}-
 
       - name: Setup PHP with PECL extension
         if: steps.app-config.outputs.has-composer == 'true'
