@@ -347,6 +347,7 @@
 	div.modal-mask .modal-header {
 		.modal-header__name {
 			color: var(--background-image-color-text);
+			display: block !important;
 		}
 		div.icons-menu {
 			button, .header-actions {
