@@ -8,7 +8,8 @@
 
 		&.button-vue--warning {
 			background-color: var(--ion-button-warning-background-default) !important;
-			border: none !important;
+			border: 1px solid var(--ion-button-warning-text) !important;
+			border-bottom-width: 2px !important;
 			color: var(--ion-button-warning-text) !important;
 
 			.button-vue__text, .button-vue__icon svg {
@@ -26,7 +27,8 @@
 
 		&.button-vue--error {
 			background-color: var(--ion-button-error-background-default) !important;
-			border: none !important;
+			border: 1px solid var(--ion-button-error-text) !important;
+			border-bottom-width: 2px !important;
 			color: var(--ion-button-error-text) !important;
 
 			.button-vue__text, .button-vue__icon svg {
