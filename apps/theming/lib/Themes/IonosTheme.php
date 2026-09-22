@@ -223,6 +223,12 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		$colorWarning = $ionColorAmberY3;
 		$colorSuccess = $ionColorGreenG3;
 		$colorInfo = $ionColorSkyS3;
+		// solid backgrounds usable at full opacity (equivalent to the
+		// previous rgba($colorInfo, 0.1) legacy note-card tint), one tinted
+		// towards the light background and one towards the dark background
+		// so the card stays legible and on-theme in both color schemes
+		$colorInfoBackgroundLight = $this->util->mix($colorInfo, $colorMainBackground, -80);
+		$colorInfoBackgroundDark = $this->util->mix($colorInfo, $ionColorBlueB9, -80);
 
 		$variables = [
 			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
@@ -275,10 +281,10 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--color-success-rgb' => join(',', $this->util->hexToRGB($colorSuccess)),
 			'--color-success-hover' => $this->util->mix($colorSuccess, $colorMainBackground, 80),
 			'--color-success-text' => $this->util->darken($colorSuccess, 4),
-			'--color-info' => $colorInfo,
-			'--color-info-rgb' => join(',', $this->util->hexToRGB($colorInfo)),
-			'--color-info-hover' => $this->util->mix($colorInfo, $colorMainBackground, 80),
-			'--color-info-text' => $this->util->darken($colorInfo, 4),
+			'--color-info' => 'light-dark(' . $colorInfoBackgroundLight . ', ' . $colorInfoBackgroundDark . ')',
+			'--color-info-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorInfoBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorInfoBackgroundDark)) . ')',
+			'--color-info-hover' => 'light-dark(' . $this->util->mix($colorInfoBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorInfo, $ionColorBlueB9, -60) . ')',
+			'--color-info-text' => $colorInfo,
 			'--color-favorite' => $ionColorAmberY3,
 			// used for the icon loading animation
 			'--color-loading-light' => '#cccccc',
