@@ -224,9 +224,11 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		$colorSuccess = $ionColorGreenG3;
 		$colorInfo = $ionColorSkyS3;
 		// solid backgrounds usable at full opacity (equivalent to the
-		// previous rgba($colorInfo, 0.1) legacy note-card tint), one tinted
+		// previous rgba($color*, 0.1) legacy note-card tint), one tinted
 		// towards the light background and one towards the dark background
 		// so the card stays legible and on-theme in both color schemes
+		$colorErrorBackgroundLight = $this->util->mix($colorError, $colorMainBackground, -80);
+		$colorErrorBackgroundDark = $this->util->mix($colorError, $ionColorBlueB9, -80);
 		$colorInfoBackgroundLight = $this->util->mix($colorInfo, $colorMainBackground, -80);
 		$colorInfoBackgroundDark = $this->util->mix($colorInfo, $ionColorBlueB9, -80);
 
@@ -269,10 +271,10 @@ class IonosTheme extends DefaultTheme implements ITheme {
 
 			'--default-clickable-area' => '44px',
 			// error/warning/success/info feedback colours
-			'--color-error' => $colorError,
-			'--color-error-rgb' => join(',', $this->util->hexToRGB($colorError)),
-			'--color-error-hover' => $this->util->mix($colorError, $colorMainBackground, 75),
-			'--color-error-text' => $this->util->darken($colorError, 5),
+			'--color-error' => 'light-dark(' . $colorErrorBackgroundLight . ', ' . $colorErrorBackgroundDark . ')',
+			'--color-error-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorErrorBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorErrorBackgroundDark)) . ')',
+			'--color-error-hover' => 'light-dark(' . $this->util->mix($colorErrorBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorError, $ionColorBlueB9, -60) . ')',
+			'--color-error-text' => $colorError,
 			'--color-warning' => $colorWarning,
 			'--color-warning-rgb' => join(',', $this->util->hexToRGB($colorWarning)),
 			'--color-warning-hover' => $this->util->darken($colorWarning, 5),
