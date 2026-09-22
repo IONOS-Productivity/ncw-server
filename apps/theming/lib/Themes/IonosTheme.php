@@ -229,6 +229,8 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		// so the card stays legible and on-theme in both color schemes
 		$colorErrorBackgroundLight = $this->util->mix($colorError, $colorMainBackground, -80);
 		$colorErrorBackgroundDark = $this->util->mix($colorError, $ionColorBlueB9, -80);
+		$colorWarningBackgroundLight = $this->util->mix($colorWarning, $colorMainBackground, -80);
+		$colorWarningBackgroundDark = $this->util->mix($colorWarning, $ionColorBlueB9, -80);
 		$colorInfoBackgroundLight = $this->util->mix($colorInfo, $colorMainBackground, -80);
 		$colorInfoBackgroundDark = $this->util->mix($colorInfo, $ionColorBlueB9, -80);
 
@@ -275,10 +277,10 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--color-error-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorErrorBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorErrorBackgroundDark)) . ')',
 			'--color-error-hover' => 'light-dark(' . $this->util->mix($colorErrorBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorError, $ionColorBlueB9, -60) . ')',
 			'--color-error-text' => $colorError,
-			'--color-warning' => $colorWarning,
-			'--color-warning-rgb' => join(',', $this->util->hexToRGB($colorWarning)),
-			'--color-warning-hover' => $this->util->darken($colorWarning, 5),
-			'--color-warning-text' => $this->util->darken($colorWarning, 7),
+			'--color-warning' => 'light-dark(' . $colorWarningBackgroundLight . ', ' . $colorWarningBackgroundDark . ')',
+			'--color-warning-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorWarningBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorWarningBackgroundDark)) . ')',
+			'--color-warning-hover' => 'light-dark(' . $this->util->mix($colorWarningBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorWarning, $ionColorBlueB9, -60) . ')',
+			'--color-warning-text' => $colorWarning,
 			'--color-success' => $colorSuccess,
 			'--color-success-rgb' => join(',', $this->util->hexToRGB($colorSuccess)),
 			'--color-success-hover' => $this->util->mix($colorSuccess, $colorMainBackground, 80),
