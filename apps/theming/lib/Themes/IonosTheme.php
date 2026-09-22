@@ -231,6 +231,8 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		$colorErrorBackgroundDark = $this->util->mix($colorError, $ionColorBlueB9, -80);
 		$colorWarningBackgroundLight = $this->util->mix($colorWarning, $colorMainBackground, -80);
 		$colorWarningBackgroundDark = $this->util->mix($colorWarning, $ionColorBlueB9, -80);
+		$colorSuccessBackgroundLight = $this->util->mix($colorSuccess, $colorMainBackground, -80);
+		$colorSuccessBackgroundDark = $this->util->mix($colorSuccess, $ionColorBlueB9, -80);
 		$colorInfoBackgroundLight = $this->util->mix($colorInfo, $colorMainBackground, -80);
 		$colorInfoBackgroundDark = $this->util->mix($colorInfo, $ionColorBlueB9, -80);
 
@@ -281,10 +283,10 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--color-warning-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorWarningBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorWarningBackgroundDark)) . ')',
 			'--color-warning-hover' => 'light-dark(' . $this->util->mix($colorWarningBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorWarning, $ionColorBlueB9, -60) . ')',
 			'--color-warning-text' => $colorWarning,
-			'--color-success' => $colorSuccess,
-			'--color-success-rgb' => join(',', $this->util->hexToRGB($colorSuccess)),
-			'--color-success-hover' => $this->util->mix($colorSuccess, $colorMainBackground, 80),
-			'--color-success-text' => $this->util->darken($colorSuccess, 4),
+			'--color-success' => 'light-dark(' . $colorSuccessBackgroundLight . ', ' . $colorSuccessBackgroundDark . ')',
+			'--color-success-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorSuccessBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorSuccessBackgroundDark)) . ')',
+			'--color-success-hover' => 'light-dark(' . $this->util->mix($colorSuccessBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorSuccess, $ionColorBlueB9, -60) . ')',
+			'--color-success-text' => $colorSuccess,
 			'--color-info' => 'light-dark(' . $colorInfoBackgroundLight . ', ' . $colorInfoBackgroundDark . ')',
 			'--color-info-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorInfoBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorInfoBackgroundDark)) . ')',
 			'--color-info-hover' => 'light-dark(' . $this->util->mix($colorInfoBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorInfo, $ionColorBlueB9, -60) . ')',
