@@ -45,7 +45,11 @@
 				:is-mime-available="isMimeAvailable"
 				:is-mtime-available="isMtimeAvailable"
 				:is-size-available="isSizeAvailable"
-				:nodes="nodes" />
+				:nodes="nodes">
+				<template #grid-toggle>
+					<slot name="grid-toggle" />
+				</template>
+			</FilesListTableHeader>
 		</template>
 
 		<!-- Body replacement if no files are available -->
@@ -905,6 +909,20 @@ export default defineComponent({
 
 		.files-list__row-column-custom {
 			width: calc(var(--row-height) * 2.5);
+		}
+
+		// Grid/list view toggle. Taken out of the header row's flex flow (and
+		// anchored to the row itself, which is already `position: relative`)
+		// so it doesn't steal width from `.files-list__row-name`'s flex-grow,
+		// which would otherwise shift every other header column out of
+		// alignment with its `<td>` counterpart in the body rows.
+		.files-list__row-grid-toggle {
+			position: absolute;
+			inset-inline-end: 0;
+			top: 0;
+			bottom: 0;
+			display: flex;
+			align-items: center;
 		}
 	}
 }

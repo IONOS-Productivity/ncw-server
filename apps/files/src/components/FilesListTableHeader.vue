@@ -65,6 +65,11 @@
 				{{ column.title }}
 			</span>
 		</th>
+
+		<!-- Grid/list view toggle -->
+		<th class="files-list__row-grid-toggle">
+			<slot name="grid-toggle" />
+		</th>
 	</tr>
 </template>
 

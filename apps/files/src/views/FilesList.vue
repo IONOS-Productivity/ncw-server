@@ -57,18 +57,6 @@
 					{{ actionDisplayName(action) }}
 				</NcActionButton>
 			</NcActions>
-
-			<NcButton v-if="enableGridView"
-				:aria-label="gridViewButtonLabel"
-				:title="gridViewButtonLabel"
-				class="files-list__header-grid-button"
-				type="tertiary"
-				@click="toggleGridView">
-				<template #icon>
-					<ListViewIcon v-if="userConfig.grid_view" />
-					<ViewGridIcon v-else />
-				</template>
-			</NcButton>
 		</div>
 
 		<!-- Drag and drop notice -->
@@ -91,6 +79,20 @@
 			:current-view="currentView"
 			:nodes="dirContentsSorted"
 			:summary="summary">
+			<template #grid-toggle>
+				<NcButton v-if="enableGridView"
+					:aria-label="gridViewButtonLabel"
+					:title="gridViewButtonLabel"
+					class="files-list__header-grid-button"
+					type="tertiary"
+					@click="toggleGridView">
+					<template #icon>
+						<ListViewIcon v-if="userConfig.grid_view" />
+						<ViewGridIcon v-else />
+					</template>
+				</NcButton>
+			</template>
+
 			<template #empty>
 				<!-- Initial loading -->
 				<NcLoadingIcon v-if="loading && !isRefreshing"

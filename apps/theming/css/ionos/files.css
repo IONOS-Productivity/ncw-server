@@ -36,13 +36,6 @@ tfoot.files-list__tfoot tr {
 	}
 }
 
-#app-content-vue button.files-list__header-grid-button {
-	position: absolute;
-	top: 70px;
-	right: 20px;
-	z-index: 33;
-}
-
 .files-list__refresh-icon {
 	position: absolute;
 	right: 50%;
