@@ -292,14 +292,14 @@ jobs:
             echo "**Trigger Conditions Check:**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
-            if [ "$EVENT_NAME" != "push" ]; then
-              echo "- ❌ Event must be 'push' (current: \`${EVENT_NAME}\`)" >> $GITHUB_STEP_SUMMARY
-              echo "   ❌ Event type is '${EVENT_NAME}' (must be 'push')"
-              set_reason "event is '${EVENT_NAME}', the trigger only runs on 'push'"
+            if [ "$EVENT_NAME" != "push" ] && [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+              echo "- ❌ Event must be 'push' or 'workflow_dispatch' (current: \`${EVENT_NAME}\`)" >> $GITHUB_STEP_SUMMARY
+              echo "   ❌ Event type is '${EVENT_NAME}' (must be 'push' or 'workflow_dispatch')"
+              set_reason "event is '${EVENT_NAME}', the trigger only runs on 'push' or 'workflow_dispatch'"
               WILL_TRIGGER=false
             else
-              echo "- ✅ Event is 'push'" >> $GITHUB_STEP_SUMMARY
-              echo "   ✅ Event type is 'push'"
+              echo "- ✅ Event is '${EVENT_NAME}'" >> $GITHUB_STEP_SUMMARY
+              echo "   ✅ Event type is '${EVENT_NAME}'"
             fi
 
             # Check if branch matches expected patterns: ionos-dev[-v<major>], ionos-stable[-v<major>], rc/* or */dev/*
@@ -1249,7 +1249,7 @@ jobs:
     name: Trigger remote workflow
     needs: [prepare-matrix, build-artifact, upload-to-artifactory]
     # Trigger remote build on "ionos-dev|ionos-stable|ionos-*-v*|rc/*|*/dev/*" branch *push*
-    # defined in the on:push:branches
+    # defined in the on:push:branches, or on a manual workflow_dispatch run on one of those branches.
     # Can be disabled via repository variable 'DISABLE_REMOTE_TRIGGER' (set to 'true' to disable)
     # Configure at: https://github.com/IONOS-Productivity/ncw-server/settings/variables/actions
     #
@@ -1277,7 +1277,7 @@ jobs:
     # down; otherwise a newly-admitted ionos-stable-v<N> would deploy as BUILD_TYPE=dev.
     if: |
       always() &&
-      github.event_name == 'push' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       (github.ref_name == 'ionos-dev' || github.ref_name == 'ionos-stable' ||
        startsWith(github.ref_name, 'ionos-dev-v') || startsWith(github.ref_name, 'ionos-stable-v') ||
        startsWith(github.ref_name, 'rc/') ||
