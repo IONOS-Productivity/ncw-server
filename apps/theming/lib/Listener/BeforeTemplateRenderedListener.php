@@ -55,5 +55,7 @@ class BeforeTemplateRenderedListener implements IEventListener {
 
 		// Making sure to inject just after core
 		Util::addScript('theming', 'theming', 'core');
+		// IONOS-specific runtime fixes and enhancements
+		Util::addScript('theming', 'ionos', 'core');
 	}
 }
