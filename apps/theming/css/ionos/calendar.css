@@ -2,8 +2,21 @@
  * SPDX-FileCopyrightText: 2026 STRATO GmbH
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-.app-calendar .datepicker-button-section .button {
-	border-color: transparent;
+.app-calendar .datepicker-button-section {
+	.button {
+		border-color: transparent;
+		flex-shrink: 0;
+	}
+
+	/* upstream uses a fixed input width, which overflows the navigation header */
+	.datepicker-button-section__datepicker {
+		flex: 1 1 auto;
+		min-width: 0;
+
+		input {
+			width: 100% !important;
+		}
+	}
 }
 
 .app-calendar.content {
