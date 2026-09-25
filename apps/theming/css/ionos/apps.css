@@ -21,9 +21,3 @@
 		}
 	}
 }
-
-.app-spreed #content-vue,
-.app-contacts #content-vue,
-.app-activity #content-vue {
-	margin: 0;
-}
