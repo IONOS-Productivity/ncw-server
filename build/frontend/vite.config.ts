@@ -60,6 +60,8 @@ const modules = {
 		theming: resolve(import.meta.dirname, 'apps/theming/src', 'theming.ts'),
 		// IONOS: legal-URLs admin panel (NSW-944)
 		'admin-legal-urls': resolve(import.meta.dirname, 'apps/theming/src', 'admin-legal-urls.js'),
+		// IONOS: runtime fixes and enhancements (NSW-1024)
+		ionos: resolve(import.meta.dirname, 'apps/theming/src', 'ionos.js'),
 	},
 	twofactor_backupcodes: {
 		'settings-personal': resolve(import.meta.dirname, 'apps/twofactor_backupcodes/src', 'settings-personal.ts'),
