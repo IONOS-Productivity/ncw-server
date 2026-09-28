@@ -2,6 +2,10 @@
  * SPDX-FileCopyrightText: 2026 STRATO GmbH
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+#app-navigation-vue .app-navigation__body {
+	overflow-y: unset !important;
+}
+
 div.suggestion-list {
 	.suggestion-list__item {
 		color: var(--ion-context-menu-item-text);
