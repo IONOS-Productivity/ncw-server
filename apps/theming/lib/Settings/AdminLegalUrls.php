@@ -32,6 +32,7 @@ class AdminLegalUrls implements IDelegatedSettings {
 			'privacyPolicyUrlDefault' => $this->appConfig->getAppValueString(ConfigLexicon::INSTANCE_PRIVACY_URL_DEFAULT, ''),
 		]);
 
+		Util::addStyle($this->appName, 'admin-legal-urls');
 		Util::addScript($this->appName, 'admin-legal-urls');
 
 		return new TemplateResponse($this->appName, 'settings-admin-legal');
