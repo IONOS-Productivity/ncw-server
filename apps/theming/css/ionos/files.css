@@ -275,7 +275,6 @@ div.v-popper--theme-dropdown.v-popper__popper:has(.v-popper__wrapper), .header-m
 /* Dialogs */
 .modal-wrapper div.modal-container {
 	background-color: var(--ion-surface-dialog) !important;
-	min-width: min-content;
 
 	&:has(.viewer__content) {
 		background-color: var(--ion-surface-viewer) !important;
