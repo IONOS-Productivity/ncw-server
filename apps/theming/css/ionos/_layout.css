@@ -95,22 +95,22 @@
 /*
  * Main app container, rendered by NcContent as
  * <div id="content-vue" class="content app-<appid>">.
- * Default: edge-to-edge, no offset.
+ * Default: edge-to-edge, below the header.
  */
 #content-vue {
 	width: 100%;
 	height: calc(100vh - var(--header-height));
-	margin: 0;
+	margin: var(--header-height) 0 0 0;
 	border-radius: 0;
-
-	/* Edge-to-edge, below the header */
-	&.app-files {
-		margin-top: var(--header-height);
-	}
 
 	/* Framed: below the header, inset from the viewport edges */
 	&:is(.app-mail, .app-tasks, .app-tables, .app-settings) {
 		margin: var(--header-height) var(--body-container-margin) var(--body-container-margin);
+	}
+
+	/* Edge-to-edge, no header offset: apps with their own top bar */
+	&:is(.app-spreed, .app-contacts, .app-activity) {
+		margin: 0;
 	}
 
 	.app-content .chatView .wrapper {
