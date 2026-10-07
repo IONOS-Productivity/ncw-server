@@ -1,0 +1,77 @@
+# SPDX-FileCopyrightText: 2026 STRATO GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Monthly check for a new Nextcloud major line. Output is a Jira ticket, never a branch or PR —
+# a human always decides when to start the actual upgrade (see
+# .dev/docs/how-to/update-nextcloud-major.md). This is a permanent boundary, not a rollout step:
+# do not add PR-opening logic to this workflow.
+name: Scheduled core major check
+
+on:
+  schedule:
+    - cron: '0 6 1 * *' # monthly, 1st of the month 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-core-major-check
+  cancel-in-progress: false
+
+jobs:
+  check-and-file-ticket:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ncw-server
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          path: ncw-server
+          fetch-depth: 0
+
+      - name: Checkout nc-docs-and-tools (not a submodule — needed for .dev/tools/*.sh)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          repository: IONOS-Productivity/nc-docs-and-tools
+          path: nc-docs-and-tools
+
+      - name: Add upstream remote
+        working-directory: ncw-server
+        run: git remote add nextcloud_origin https://github.com/nextcloud/server.git
+
+      - name: Run core scan
+        id: scan
+        working-directory: ncw-server
+        run: |
+          set -o pipefail
+          ../nc-docs-and-tools/tools/core-scan.sh | tee /tmp/core-scan.md
+        # core-scan.sh exits 1 loud on network/rate-limit error — intentionally not caught, so
+        # the job goes red rather than silently reporting "nothing new" on a transient outage.
+
+      - name: Decide if a new major is available
+        id: decide
+        run: |
+          row=$(grep -E '\| next \(v[0-9]+\) \|' /tmp/core-scan.md || true)
+          if [[ -z "$row" || "$row" != *"**major-available**"* ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No new major line available this run."
+            exit 0
+          fi
+          current_version=$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' <<<"$(grep -E '\| current \(' /tmp/core-scan.md)" | head -1)
+          next_tag=$(awk -F'|' '{gsub(/^ +| +$/,"",$4); print $4}' <<<"$row")
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "current_version=${current_version#v}" >> "$GITHUB_OUTPUT"
+          echo "next_tag=$next_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update Jira ticket
+        if: steps.decide.outputs.available == 'true'
+        env:
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+        run: |
+          ../nc-docs-and-tools/tools/jira-major-ticket.sh \
+            "${{ steps.decide.outputs.current_version }}" \
+            "${{ steps.decide.outputs.next_tag }}"
+        working-directory: ncw-server
