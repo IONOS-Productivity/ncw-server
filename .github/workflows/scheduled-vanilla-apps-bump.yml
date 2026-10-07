@@ -1,0 +1,157 @@
+# SPDX-FileCopyrightText: 2026 STRATO GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Weekly sweep of every vanilla (nextcloud/*) apps-external/* submodule. Mechanically applies
+# any bump that .dev/docs/how-to/upgrade-all-vanilla-app-submodules.md already calls unambiguous
+# (build ok/no-package.json, no major-version jump, store matches the chosen tag) and opens one
+# PR with one commit per bumped app. Anything the guide says to "stop and ask the developer"
+# about — a major-version jump, a store/tag mismatch, a build failure — is left out of the bot's
+# commit set and listed in the PR body for a human to triage explicitly. Never auto-merges;
+# the PR goes through the same build-artifact.yml CI gate and human review as any other PR.
+#
+# `.dev/` is a local, untracked dev-machine symlink to a sibling nc-docs-and-tools checkout — it
+# does not exist in a fresh Actions checkout, so this workflow checks that repo out explicitly
+# under a separate path instead of relying on the symlink.
+name: Scheduled vanilla apps bump
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # weekly, Monday 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-vanilla-apps-bump
+  cancel-in-progress: false
+
+jobs:
+  scan-and-bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout ncw-server (default integration branch)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          path: ncw-server
+          token: ${{ secrets.UPGRADE_BOT_PAT }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Checkout nc-docs-and-tools (not a submodule — needed for .dev/tools/*.sh)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          repository: IONOS-Productivity/nc-docs-and-tools
+          path: nc-docs-and-tools
+          token: ${{ secrets.UPGRADE_BOT_PAT }}
+
+      - name: Configure bot git identity
+        working-directory: ncw-server
+        run: |
+          git config user.name 'ncw-upgrade-bot'
+          git config user.email 'ncw-upgrade-bot@users.noreply.github.com'
+
+      - name: Resolve integration branch and NC target
+        id: resolve
+        working-directory: ncw-server
+        run: |
+          branch=$(git branch --show-current)
+          nc_target=$(sed -n "s/^\$OC_Version = \[\([0-9]*\),.*/\1/p" version.php)
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "nc_target=$nc_target" >> "$GITHUB_OUTPUT"
+          echo "Resolved integration branch: $branch (NC$nc_target)"
+
+      - name: Create working branch
+        working-directory: ncw-server
+        run: |
+          git switch -c "bot/dev/update-vanilla-apps-nc${{ steps.resolve.outputs.nc_target }}-$(date +%Y%m%d)"
+
+      - name: Scan and apply mechanical bumps
+        id: bump
+        run: |
+          set -o pipefail
+          ../nc-docs-and-tools/tools/bump-vanilla-apps.sh \
+            ncw-server \
+            /tmp/vanilla-scan.md \
+            /tmp/vanilla-summary.sh | tee /tmp/bump-log.txt
+          source /tmp/vanilla-summary.sh
+          echo "bumped_count=${BUMPED_COUNT:-0}" >> "$GITHUB_OUTPUT"
+        # bump-vanilla-apps.sh propagates the scan script's own exit 1 on network/rate-limit
+        # error — intentionally NOT caught here, so the job goes red instead of silently
+        # reporting "nothing to bump" on a transient GitHub outage.
+
+      - name: Stop here if nothing to bump
+        if: steps.bump.outputs.bumped_count == '0'
+        run: echo "No mechanical bumps available this run — nothing to do."
+
+      - name: Build PR body
+        if: steps.bump.outputs.bumped_count != '0'
+        id: body
+        run: |
+          source /tmp/vanilla-summary.sh
+          {
+            echo "## Summary"
+            echo
+            echo "Bump every vanilla (\`nextcloud/*\`) app submodule to the newest stable release"
+            echo "that covers NC${{ steps.resolve.outputs.nc_target }}. Opened automatically by"
+            echo "\`scheduled-vanilla-apps-bump.yml\` — see"
+            echo "[upgrade-all-vanilla-app-submodules.md](https://github.com/IONOS-Productivity/nc-docs-and-tools/blob/master/docs/how-to/upgrade-all-vanilla-app-submodules.md)"
+            echo "for the rules this follows. Targets come from"
+            echo "\`.dev/tools/vanilla-apps-scan.sh --build-check\`."
+            echo
+            cat /tmp/vanilla-scan.md
+            echo
+            echo "Out of scope: IONOS forks, IONOS custom apps, \`IONOS/\`, \`3rdparty\` — handled"
+            echo "by their own scheduled workflows / guides."
+            echo
+            echo "## Notes — excluded from this PR, needs a human decision"
+            echo
+            if [[ -n "${SKIPPED_MAJOR:-}" ]]; then
+              echo "**Major-version jumps** (read the release notes first; may need its own PR):"
+              echo '```'
+              echo "$SKIPPED_MAJOR"
+              echo '```'
+            fi
+            if [[ -n "${SKIPPED_STORE_MISMATCH:-}" ]]; then
+              echo "**Store/tag mismatches** (the tag scan and the App Store disagree):"
+              echo '```'
+              echo "$SKIPPED_STORE_MISMATCH"
+              echo '```'
+            fi
+            if [[ -n "${SKIPPED_BUILD_FAIL:-}" ]]; then
+              echo "**Build failures** (the target tag's lockfile doesn't install under CI's npm):"
+              echo '```'
+              echo "$SKIPPED_BUILD_FAIL"
+              echo '```'
+            fi
+            if [[ -z "${SKIPPED_MAJOR:-}${SKIPPED_STORE_MISMATCH:-}${SKIPPED_BUILD_FAIL:-}" ]]; then
+              echo "(none this run)"
+            fi
+            echo
+            echo "## Review checklist"
+            echo
+            echo "See [review-bot-pr.md](https://github.com/IONOS-Productivity/nc-docs-and-tools/blob/master/docs/how-to/review-bot-pr.md#vanilla-apps)."
+            echo
+            echo "## Checklist"
+            echo
+            echo "- [ ] run \`.dev/container/check_release.sh pr-<PR-number> ncw\` — validate pr locally"
+            echo "- [ ] re-run \`.dev/tools/vanilla-apps-scan.sh\` on the branch — every row \"at max\" (or a pin-down explained above)"
+          } > /tmp/pr-body.md
+
+      - name: Push and open PR
+        if: steps.bump.outputs.bumped_count != '0'
+        working-directory: ncw-server
+        env:
+          GH_TOKEN: ${{ secrets.UPGRADE_BOT_PAT }}
+        run: |
+          branch=$(git branch --show-current)
+          git push -u origin "$branch"
+          gh pr create \
+            --repo IONOS-Productivity/ncw-server \
+            --base "${{ steps.resolve.outputs.branch }}" \
+            --head "$branch" \
+            --title "IONOS: update vanilla app submodules to max NC${{ steps.resolve.outputs.nc_target }}-compatible versions (scheduled)" \
+            --body-file /tmp/pr-body.md
