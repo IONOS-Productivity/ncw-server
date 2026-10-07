@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: 2026 STRATO GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Weekly check for a newer Nextcloud patch release in the current major line. DETECTION ONLY —
+# deliberately does not attempt the mechanical bump yet.
+#
+# Why: update-nextcloud-minor.md §1 says "the upstream tag is merged into the integration
+# branch," but .dev/tools/upgrade-do.sh actually does a hard `git checkout <tag>` (confirmed by
+# reading the script), which its own header comment says discards the IONOS delta if run on the
+# wrong branch state. How the "merge" step and the script's checkout are actually meant to
+# compose isn't fully spelled out in the docs as written — rather than encode a guess into an
+# unattended job that could silently discard the fork delta, this workflow stops at reporting
+# the verdict. Before adding an auto-PR step here (the plan's own rollout order already called
+# for validating this tier by hand first), clarify that sequencing in
+# update-nextcloud-minor.md itself, then extend this workflow the same way
+# scheduled-vanilla-apps-bump.yml / scheduled-fork-apps-bump.yml were built: a driving script
+# that performs the real steps and is tested against a scratch clone before this job is allowed
+# to push anything.
+name: Scheduled core minor check
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # weekly, Monday 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-core-minor-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ncw-server
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          path: ncw-server
+          fetch-depth: 0
+
+      - name: Checkout nc-docs-and-tools (not a submodule — needed for .dev/tools/*.sh)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          repository: IONOS-Productivity/nc-docs-and-tools
+          path: nc-docs-and-tools
+
+      - name: Add upstream remote
+        working-directory: ncw-server
+        run: git remote add nextcloud_origin https://github.com/nextcloud/server.git
+
+      - name: Run core scan
+        working-directory: ncw-server
+        run: |
+          set -o pipefail
+          ../nc-docs-and-tools/tools/core-scan.sh | tee -a "$GITHUB_STEP_SUMMARY"
+        # Exits 1 loud on network/rate-limit error — intentionally not caught, so a transient
+        # outage shows red instead of silently reporting "nothing new."
