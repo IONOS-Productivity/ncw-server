@@ -138,6 +138,8 @@ class DeclarativeManager implements IDeclarativeManager {
 		$isAdmin = $this->groupManager->isAdmin($user->getUID());
 		$forms = [];
 
+		$onlyDelegatedSettings = $this->config->getSystemValueBool('settings.only-delegated-settings');
+
 		foreach ($this->appSchemas as $app => $schemas) {
 			foreach ($schemas as $schema) {
 				if ($type !== null && $schema['section_type'] !== $type) {
@@ -150,6 +152,10 @@ class DeclarativeManager implements IDeclarativeManager {
 				// these fields even when they are allowed to view the section through admin
 				// delegation, which only covers non-declarative settings.
 				if ($schema['section_type'] === DeclarativeSettingsTypes::SECTION_TYPE_ADMIN && !$isAdmin) {
+					continue;
+				}
+
+				if ($schema['section_type'] === 'admin' && $onlyDelegatedSettings) {
 					continue;
 				}
 

@@ -10,17 +10,19 @@ use OC\Authentication\TwoFactorAuth\MandatoryTwoFactor;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
 use OCP\Encryption\IManager;
+use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\IUserManager;
-use OCP\Settings\ISettings;
+use OCP\Settings\IDelegatedSettings;
 
-class Security implements ISettings {
+class Security implements IDelegatedSettings {
 	public function __construct(
 		private IManager $manager,
 		private IUserManager $userManager,
 		private MandatoryTwoFactor $mandatoryTwoFactor,
 		private IInitialState $initialState,
 		private IURLGenerator $urlGenerator,
+		private IL10N $l10n,
 	) {
 	}
 
@@ -48,7 +50,11 @@ class Security implements ISettings {
 		$this->initialState->provideInitialState('encryption-modules', $encryptionModuleList);
 		$this->initialState->provideInitialState('encryption-admin-doc', $this->urlGenerator->linkToDocs('admin-encryption'));
 
-		return new TemplateResponse('settings', 'settings/admin/security', [], '');
+		$parameters = [
+			'encryption-modules' => $encryptionModuleList,
+		];
+
+		return new TemplateResponse('settings', 'settings/admin/security', $parameters, '');
 	}
 
 	/**
@@ -69,5 +75,13 @@ class Security implements ISettings {
 	#[\Override]
 	public function getPriority(): int {
 		return 10;
+	}
+
+	public function getName(): string {
+		return $this->l10n->t('Two-Factor Authentication');
+	}
+
+	public function getAuthorizedAppConfig(): array {
+		return [];
 	}
 }
