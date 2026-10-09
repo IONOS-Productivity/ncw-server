@@ -425,3 +425,9 @@ path = ["core/img/logo/logo.png", "core/img/logo/logo.svg"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 STRATO GmbH"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = ["a11y/package.json", "a11y/package-lock.json", "a11y/tsconfig.json", "a11y/.gitignore", "a11y/README.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 STRATO GmbH"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
