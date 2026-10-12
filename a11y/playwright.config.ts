@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { defineConfig, devices } from '@playwright/test'
+import { BASE_URL } from './helpers/instance'
 
 // A running Nextcloud with the IONOS theme enforced, see README.md
-const baseURL = process.env.BASE_URL ?? 'http://localhost:8080'
+const baseURL = BASE_URL
 
 export default defineConfig({
 	testDir: './specs',

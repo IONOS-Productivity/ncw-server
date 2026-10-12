@@ -35,8 +35,11 @@ npx playwright test --project=pages --ui       # interactive UI with timeline
 ```
 
 ### Instance without pretty URLs (`/index.php/login` works, `/login` is 404)
-The token tests read the theme stylesheet URLs from the instance's login page, so they work either way.
-For the `pages` tests set the prefix: `A11Y_PATH_PREFIX=/index.php npm run test:pages`.
+Detected automatically (`helpers/instance.ts`); `A11Y_PATH_PREFIX=/index.php` forces it, `A11Y_PATH_PREFIX=` forces none.
+
+### Login for the `pages` tests
+`specs/auth.setup.ts` logs in once with `A11Y_USER` / `A11Y_PASSWORD` and stores the session in `.auth/` (git-ignored).
+Use a local account with admin rights and without 2FA/SSO. Wrong credentials and untrusted domains fail fast with a clear message.
 
 ## Gotchas
 - **Theme CSS is cached.** After editing `apps/theming/css/ionos/*` or `IonosTheme.php` run

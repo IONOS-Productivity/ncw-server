@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { test, expect } from '@playwright/test'
-import { expectNoA11yViolations, PATH_PREFIX } from '../helpers/axe'
+import { expectNoA11yViolations } from '../helpers/axe'
+import { dismissOverlays, getPathPrefix } from '../helpers/instance'
 
 /**
  * Real Nextcloud pages rendered with the IONOS theme (`enforce_theme=ionos`).
@@ -36,16 +37,18 @@ for (const scheme of ['light', 'dark'] as const) {
 
 		for (const pageCase of pages) {
 			test(`${pageCase.name} has no a11y violations`, async ({ browser, page: authedPage }, testInfo) => {
+				const prefix = await getPathPrefix()
 				// the login page must be scanned logged out
 				const context = pageCase.auth
 					? undefined
 					: await browser.newContext({ colorScheme: scheme, storageState: { cookies: [], origins: [] } })
 				const page = context ? await context.newPage() : authedPage
 
-				await page.goto(`${PATH_PREFIX}${pageCase.path}`)
+				await page.goto(`${prefix}${pageCase.path}`)
 				await expect(page.locator(pageCase.ready).first()).toBeVisible({ timeout: 30_000 })
 				// let late Vue rendering settle
 				await page.waitForLoadState('networkidle').catch(() => {})
+				await dismissOverlays(page)
 
 				await expectNoA11yViolations(page, testInfo, `page-${scheme}-${pageCase.name}`)
 				await context?.close()
@@ -63,8 +66,9 @@ for (const scheme of ['light', 'dark'] as const) {
 		test.use({ colorScheme: scheme })
 
 		test.beforeEach(async ({ page }) => {
-			await page.goto(`${PATH_PREFIX}/apps/files/`)
+			await page.goto(`${await getPathPrefix()}/apps/files/`)
 			await expect(page.locator('[data-cy-files-list-row]').first()).toBeVisible({ timeout: 30_000 })
+			await dismissOverlays(page)
 		})
 
 		test('files: "New" menu open', async ({ page }, testInfo) => {
