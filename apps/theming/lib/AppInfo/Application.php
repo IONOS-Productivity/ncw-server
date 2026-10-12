@@ -8,9 +8,11 @@ declare(strict_types=1);
  */
 namespace OCA\Theming\AppInfo;
 
+use OCA\Files\Event\LoadAdditionalScriptsEvent;
 use OCA\Theming\Capabilities;
 use OCA\Theming\Listener\BeforePreferenceListener;
 use OCA\Theming\Listener\BeforeTemplateRenderedListener;
+use OCA\Theming\Listener\LoadFilesScriptListener;
 use OCA\Theming\SetupChecks\PhpImagickModule;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -35,6 +37,8 @@ class Application extends App implements IBootstrap {
 		$context->registerEventListener(BeforeLoginTemplateRenderedEvent::class, BeforeTemplateRenderedListener::class);
 		$context->registerEventListener(BeforePreferenceSetEvent::class, BeforePreferenceListener::class);
 		$context->registerEventListener(BeforePreferenceDeletedEvent::class, BeforePreferenceListener::class);
+		// IONOS: load Files-app-specific runtime script only when the Files app renders (NSW-1024)
+		$context->registerEventListener(LoadAdditionalScriptsEvent::class, LoadFilesScriptListener::class);
 		$context->registerSetupCheck(PhpImagickModule::class);
 	}
 

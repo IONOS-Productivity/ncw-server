@@ -119,6 +119,15 @@
     "theming",
     "twofactor_backupcodes",
     "viewer",
-    "workflowengine"
+    "files_trashbin",
+    "user_status",
+    "webhook_listeners",
+    "ncw_apps_menu",
+    "ncw_mailtemplate",
+    "ncw_tools",
+    "notify_push",
+    "text",
+    "twofactor_totp",
+    "password_policy"
   ]
 }

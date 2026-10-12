@@ -12,9 +12,11 @@ use OC\Settings\Manager;
 use OCA\WorkflowEngine\Settings\Section;
 use OCP\App\IAppManager;
 use OCP\Group\ISubAdmin;
+use OCP\IConfig;
 use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IURLGenerator;
+use OCP\IUser;
 use OCP\L10N\IFactory;
 use OCP\Server;
 use OCP\Settings\ISettings;
@@ -34,6 +36,7 @@ class ManagerTest extends TestCase {
 	private IGroupManager&MockObject $groupManager;
 	private ISubAdmin&MockObject $subAdmin;
 	private IAppManager&MockObject $appManager;
+	private IConfig&MockObject $config;
 
 	private Manager $manager;
 
@@ -50,6 +53,7 @@ class ManagerTest extends TestCase {
 		$this->groupManager = $this->createMock(IGroupManager::class);
 		$this->subAdmin = $this->createMock(ISubAdmin::class);
 		$this->appManager = $this->createMock(IAppManager::class);
+		$this->config = $this->createMock(IConfig::class);
 
 		$this->manager = new Manager(
 			$this->logger,
@@ -60,6 +64,7 @@ class ManagerTest extends TestCase {
 			$this->groupManager,
 			$this->subAdmin,
 			$this->appManager,
+			$this->config,
 		);
 	}
 
@@ -281,5 +286,45 @@ class ManagerTest extends TestCase {
 		$this->assertEquals([
 			55 => [$section],
 		], $this->manager->getAdminSections());
+	}
+
+	public function testGetAllowedAdminSettingsWithDelegatedSettings(): void {
+		$user = $this->createMock(IUser::class);
+		$user->method('getUID')->willReturn('testUser');
+
+		$this->groupManager->method('isAdmin')->with('testUser')->willReturn(true);
+		$this->config->method('getSystemValueBool')->with('settings.only-delegated-settings')->willReturn(true);
+
+		$section = $this->createMock(ISettings::class);
+		$section->method('getPriority')->willReturn(13);
+		$section->method('getSection')->willReturn('sharing');
+
+		$this->container->method('get')->with('myAdminClass')->willReturn($section);
+		$this->manager->registerSetting('admin', 'myAdminClass');
+
+		// When delegated settings are enabled, even admins should be treated as non-admin
+		$settings = $this->manager->getAllowedAdminSettings('sharing', $user);
+
+		$this->assertEquals([], $settings);
+	}
+
+	public function testGetAllowedAdminSettingsWithoutDelegatedSettings(): void {
+		$user = $this->createMock(IUser::class);
+		$user->method('getUID')->willReturn('testUser');
+
+		$this->groupManager->method('isAdmin')->with('testUser')->willReturn(true);
+		$this->config->method('getSystemValueBool')->with('settings.only-delegated-settings')->willReturn(false);
+
+		$section = $this->createMock(ISettings::class);
+		$section->method('getPriority')->willReturn(13);
+		$section->method('getSection')->willReturn('sharing');
+
+		$this->container->method('get')->with('myAdminClass')->willReturn($section);
+		$this->manager->registerSetting('admin', 'myAdminClass');
+
+		// When delegated settings are disabled, admins should see admin settings
+		$settings = $this->manager->getAllowedAdminSettings('sharing', $user);
+
+		$this->assertEquals([13 => [$section]], $settings);
 	}
 }

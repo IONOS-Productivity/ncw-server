@@ -1,0 +1,11 @@
+/*
+ * SPDX-FileCopyrightText: 2026 STRATO GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+#body-login footer a {
+	color: var(--color-text);
+}
+
+#body-login footer .info {
+	color: var(--color-text);
+}

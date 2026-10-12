@@ -11,6 +11,7 @@ use Closure;
 use OCP\App\IAppManager;
 use OCP\AppFramework\QueryException;
 use OCP\Group\ISubAdmin;
+use OCP\IConfig;
 use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -51,6 +52,7 @@ class Manager implements IManager {
 		private IGroupManager $groupManager,
 		private ISubAdmin $subAdmin,
 		private IAppManager $appManager,
+		private IConfig $config,
 	) {
 	}
 
@@ -323,6 +325,11 @@ class Manager implements IManager {
 	#[\Override]
 	public function getAllowedAdminSettings(string $section, IUser $user): array {
 		$isAdmin = $this->groupManager->isAdmin($user->getUID());
+
+		if ($this->config->getSystemValueBool('settings.only-delegated-settings')) {
+			$isAdmin = false;
+		}
+
 		if ($isAdmin) {
 			$appSettings = $this->getSettings('admin', $section);
 		} else {
