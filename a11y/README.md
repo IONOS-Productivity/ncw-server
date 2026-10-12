@@ -25,7 +25,18 @@ A11Y_REPORT_ONLY=1 npm test   # never fail, only report
 npm run report            # open the HTML report
 npm run summary           # a11y-results/SUMMARY.md
 ```
-Env: `BASE_URL`, `A11Y_USER` / `A11Y_PASSWORD` (default `admin` / `admin123`), `A11Y_REPORT_ONLY=1`, `A11Y_LABEL`.
+Env: `BASE_URL`, `A11Y_USER` / `A11Y_PASSWORD` (default `admin` / `admin123`), `A11Y_REPORT_ONLY=1`, `A11Y_LABEL`,
+`A11Y_PATH_PREFIX`.
+
+### Watch the browser
+```bash
+npx playwright test --project=pages --headed   # visible Chromium
+npx playwright test --project=pages --ui       # interactive UI with timeline
+```
+
+### Instance without pretty URLs (`/index.php/login` works, `/login` is 404)
+The token tests read the theme stylesheet URLs from the instance's login page, so they work either way.
+For the `pages` tests set the prefix: `A11Y_PATH_PREFIX=/index.php npm run test:pages`.
 
 ## Gotchas
 - **Theme CSS is cached.** After editing `apps/theming/css/ionos/*` or `IonosTheme.php` run

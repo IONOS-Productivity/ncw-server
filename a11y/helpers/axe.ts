@@ -96,3 +96,9 @@ export async function expectNoA11yViolations(
 		],
 	).toEqual([])
 }
+
+/**
+ * Prefix for instances without pretty URLs, e.g. `A11Y_PATH_PREFIX=/index.php`
+ * (then `/login` becomes `/index.php/login`). Leave empty when `/login` works.
+ */
+export const PATH_PREFIX = process.env.A11Y_PATH_PREFIX ?? ''

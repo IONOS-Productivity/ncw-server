@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { test, expect } from '@playwright/test'
-import { expectNoA11yViolations } from '../helpers/axe'
+import { expectNoA11yViolations, PATH_PREFIX } from '../helpers/axe'
 
 /**
  * Real Nextcloud pages rendered with the IONOS theme (`enforce_theme=ionos`).
@@ -42,7 +42,7 @@ for (const scheme of ['light', 'dark'] as const) {
 					: await browser.newContext({ colorScheme: scheme, storageState: { cookies: [], origins: [] } })
 				const page = context ? await context.newPage() : authedPage
 
-				await page.goto(pageCase.path)
+				await page.goto(`${PATH_PREFIX}${pageCase.path}`)
 				await expect(page.locator(pageCase.ready).first()).toBeVisible({ timeout: 30_000 })
 				// let late Vue rendering settle
 				await page.waitForLoadState('networkidle').catch(() => {})
@@ -63,7 +63,7 @@ for (const scheme of ['light', 'dark'] as const) {
 		test.use({ colorScheme: scheme })
 
 		test.beforeEach(async ({ page }) => {
-			await page.goto('/apps/files/')
+			await page.goto(`${PATH_PREFIX}/apps/files/`)
 			await expect(page.locator('[data-cy-files-list-row]').first()).toBeVisible({ timeout: 30_000 })
 		})
 
