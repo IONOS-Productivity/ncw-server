@@ -140,7 +140,7 @@ function harness(pair: Pair, stylesheets: string[]): string {
 		html { color-scheme: light dark; }
 		body { margin: 0; font-family: sans-serif; }
 		/* paint the page background first, so transparent token backgrounds resolve like in the real UI */
-		main { background: var(--color-main-background); padding: 16px; }
+		main { background: var(--color-main-background); padding: 16px; width: 640px; box-sizing: border-box; }
 		.sample { padding: 12px; font-size: 15px; font-weight: 400; line-height: 1.5; }
 	</style>
 </head>
@@ -178,6 +178,12 @@ for (const scheme of schemes) {
 					)
 					expect(value, `${token} is not defined by the IONOS theme CSS`).not.toBe('')
 				}
+
+				// Screenshot of the rendered pair, attached before the assertion so failing tests have it too
+				await testInfo.attach(`pair-${scheme}.png`, {
+					body: await page.locator('main').screenshot(),
+					contentType: 'image/png',
+				})
 
 				await expectNoA11yViolations(page, testInfo, `tokens-${scheme}-${pair.fg}-on-${pair.bg}`, {
 					rules: ['color-contrast'],
