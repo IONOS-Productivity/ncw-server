@@ -5,5 +5,6 @@
         "Upstream-supported PHP ranges per major: https://github.com/nextcloud/server/wiki/Releases-and-PHP-versions"
     ],
     "32": "8.3",
-    "33": "8.4"
+    "33": "8.4",
+    "34": "8.4"
 }
