@@ -10,6 +10,8 @@ const baseURL = BASE_URL
 
 export default defineConfig({
 	testDir: './specs',
+	// real pages with many apps can be slow to render and to scan
+	timeout: 90_000,
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 1 : 0,

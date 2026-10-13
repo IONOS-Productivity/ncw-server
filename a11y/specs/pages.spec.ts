@@ -54,13 +54,24 @@ for (const scheme of ['light', 'dark'] as const) {
 					: await browser.newContext({ colorScheme: scheme, storageState: { cookies: [], origins: [] } })
 				const page = context ? await context.newPage() : authedPage
 
-				await page.goto(`${prefix}${pageCase.path}`)
-				await expect(page.locator(pageCase.ready).first()).toBeVisible({ timeout: 30_000 })
-				// let late Vue rendering settle
-				await page.waitForLoadState('networkidle').catch(() => {})
-				await dismissOverlays(page)
+				const response = await test.step(`open ${pageCase.path}`, () => page.goto(`${prefix}${pageCase.path}`))
+				const status = response?.status() ?? 0
+				if (status >= 400) {
+					await context?.close()
+					// e.g. the admin overview for an account without admin rights: not an a11y finding
+					test.skip(status === 403, `${pageCase.path} returned HTTP 403: this account has no access (use an admin account via A11Y_USER)`)
+					throw new Error(`${pageCase.path} returned HTTP ${status}`)
+				}
 
-				await expectNoA11yViolations(page, testInfo, `page-${scheme}-${pageCase.name}`)
+				await test.step('wait until rendered', async () => {
+					await expect(page.locator(pageCase.ready).first()).toBeVisible({ timeout: 30_000 })
+					// let late Vue rendering settle, but never wait for "network idle" for long:
+					// pages with polling requests (notifications, status) never reach it
+					await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
+					await dismissOverlays(page)
+				})
+
+				await test.step('axe scan', () => expectNoA11yViolations(page, testInfo, `page-${scheme}-${pageCase.name}`))
 				await context?.close()
 			})
 		}
