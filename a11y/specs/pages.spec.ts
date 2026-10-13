@@ -79,8 +79,10 @@ for (const scheme of ['light', 'dark'] as const) {
 }
 
 /**
- * Interactive states styled by apps/theming/css/ionos/{files,buttons,sidebar}.css.
+ * Interactive states styled by apps/theming/css/ionos/{files,buttons}.css and the --ion-context-menu-* tokens.
  * Static page loads never show these, so regressions in them stay invisible without explicit steps.
+ * Kept deliberately small (two Files menus, the second one also hovered): they are smoke checks that the tokens
+ * really reach the components; the colour pairs themselves are covered by theme-tokens.spec.ts.
  */
 for (const scheme of ['light', 'dark'] as const) {
 	test.describe(`IONOS theme interactive states - ${scheme} mode`, () => {
@@ -106,14 +108,12 @@ for (const scheme of ['light', 'dark'] as const) {
 			await expectNoA11yViolations(page, testInfo, `state-${scheme}-files-row-actions`, {
 				include: ['[role="menu"]'],
 			})
-		})
 
-		test('files: details sidebar open', async ({ page }, testInfo) => {
-			await openRowActions(page)
-			await page.locator('[data-cy-files-list-row-action="details"]:visible').first().click()
-			await expect(page.locator('#app-sidebar-vue, .app-sidebar').first()).toBeVisible()
-			await expectNoA11yViolations(page, testInfo, `state-${scheme}-files-sidebar`, {
-				include: ['#app-sidebar-vue, .app-sidebar'],
+			// The IONOS menu tokens that matter most are the hover/active ones, which a resting menu never shows.
+			// axe reads the computed colours at scan time, so hovering an item makes it check the hover colours.
+			await page.locator('[role="menu"] [role="menuitem"]:visible').nth(1).hover()
+			await expectNoA11yViolations(page, testInfo, `state-${scheme}-files-row-actions-hover`, {
+				include: ['[role="menu"]'],
 			})
 		})
 	})

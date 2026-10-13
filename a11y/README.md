@@ -7,7 +7,7 @@ Same approach as the a11y workshop (`@axe-core/playwright`), applied to the IONO
 | Project | Spec | Needs login | What |
 |---|---|---|---|
 | `theme-tokens` | `specs/theme-tokens.spec.ts` | no | Colour contrast (WCAG 1.4.3) of ~54 text/background token pairs, light + dark, rendered from the theme CSS as the server generates it |
-| `pages` | `specs/pages.spec.ts` | yes | Login, Files, settings, admin overview + Files menus/sidebar, light + dark |
+| `pages` | `specs/pages.spec.ts` | yes | Login, Files, settings, admin overview + Files "New" menu and row actions menu (resting and hovered), light + dark |
 
 ## Run locally
 ```bash
