@@ -26,7 +26,14 @@ npm run report            # open the HTML report
 npm run summary           # a11y-results/SUMMARY.md
 ```
 Env: `BASE_URL`, `A11Y_USER` / `A11Y_PASSWORD` (default `admin` / `admin123`), `A11Y_REPORT_ONLY=1`, `A11Y_LABEL`,
-`A11Y_PATH_PREFIX`.
+`A11Y_PATH_PREFIX`, `A11Y_SCOPE`.
+
+### Scope of the page scans
+`A11Y_SCOPE=theme` (default) checks only what a theme/CSS customisation can break: `color-contrast` and
+`link-in-text-block`. Missing labels, ARIA misuse, `lang` etc. come from markup the IONOS theme does not change,
+and today they are upstream Nextcloud findings (e.g. the hidden upload `<input>` in Files has no label).
+`A11Y_SCOPE=full` runs all WCAG 2.0/2.1 A+AA rules; combine it with the baseline diff below.
+The Files interaction tests use language-independent selectors, so they also work in a German UI.
 
 ### Watch the browser
 ```bash

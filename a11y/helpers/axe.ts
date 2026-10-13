@@ -10,6 +10,18 @@ import { join } from 'node:path'
 /** Same rule set as the workshop: WCAG 2.0/2.1 level A + AA */
 export const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']
 
+/**
+ * Rules a *theme* (CSS / colour) customisation can plausibly break. Missing labels, ARIA misuse, `lang` etc.
+ * come from markup, which the IONOS theme does not change.
+ */
+export const THEME_RULES = ['color-contrast', 'link-in-text-block']
+
+/**
+ * `theme` (default): only THEME_RULES, so findings are about our customisation.
+ * `full`: all WCAG A/AA rules (WCAG_TAGS); most findings will be upstream Nextcloud, use together with the baseline diff.
+ */
+export const SCOPE = process.env.A11Y_SCOPE === 'full' ? 'full' : 'theme'
+
 /** Label of this run (e.g. `ionos` vs `default`) so two runs can be diffed afterwards */
 export const RUN_LABEL = process.env.A11Y_LABEL ?? 'ionos'
 
@@ -23,7 +35,7 @@ export interface ScanOptions {
 	include?: string[]
 	/** CSS selectors to skip (e.g. third party widgets we do not own) */
 	exclude?: string[]
-	/** Only run these axe rules (e.g. `['color-contrast']`) */
+	/** Only run these axe rules (e.g. `['color-contrast']`); overrides the A11Y_SCOPE default */
 	rules?: string[]
 	/**
 	 * Treat axe "incomplete" results (axe could not decide, e.g. text over an image) as failures.
@@ -44,7 +56,13 @@ export async function expectNoA11yViolations(
 	options: ScanOptions = {},
 ) {
 	let builder = new AxeBuilder({ page })
-	builder = options.rules ? builder.withRules(options.rules) : builder.withTags(WCAG_TAGS)
+	if (options.rules) {
+		builder = builder.withRules(options.rules)
+	} else if (SCOPE === 'theme') {
+		builder = builder.withRules(THEME_RULES)
+	} else {
+		builder = builder.withTags(WCAG_TAGS)
+	}
 	for (const selector of options.include ?? []) {
 		builder = builder.include(selector)
 	}

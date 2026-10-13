@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 STRATO GmbH
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { expectNoA11yViolations } from '../helpers/axe'
 import { dismissOverlays, getPathPrefix } from '../helpers/instance'
 
@@ -10,7 +10,9 @@ import { dismissOverlays, getPathPrefix } from '../helpers/instance'
  * Real Nextcloud pages rendered with the IONOS theme (`enforce_theme=ionos`).
  * Same idea as the workshop's `home page has no a11y issues`, once in light and once in dark mode.
  *
- * Note: these pages contain a lot of upstream Nextcloud / third-party app markup. To see only what
+ * By default only the rules a theme can break are checked (A11Y_SCOPE=theme: colour contrast, links distinguishable
+ * from text). A11Y_SCOPE=full runs all WCAG A/AA rules; those pages contain a lot of upstream Nextcloud markup
+ * (e.g. the hidden upload <input> in Files has no label), so use the baseline diff below with it. To see only what
  * *our* customisation breaks, run the suite twice (A11Y_LABEL=default with `enforce_theme=default`,
  * A11Y_LABEL=ionos with `enforce_theme=ionos`) and diff the findings, see README.md.
  */
@@ -30,6 +32,14 @@ const pages: PageCase[] = [
 	{ name: 'personal-settings', path: '/settings/user', ready: '#app-content, #content-vue, main', auth: true },
 	{ name: 'admin-overview', path: '/settings/admin/overview', ready: '#app-content, #content-vue, main', auth: true },
 ]
+
+/**
+ * Open the "..." menu of the first file row. Language independent: the toggle is the row's button that
+ * opens a menu (its label is translated, e.g. "Actions" / "Aktionen").
+ */
+async function openRowActions(page: Page) {
+	await page.locator('[data-cy-files-list-row]:first-child [data-cy-files-list-row-actions] button[aria-haspopup="menu"]').click()
+}
 
 for (const scheme of ['light', 'dark'] as const) {
 	test.describe(`IONOS theme pages - ${scheme} mode`, () => {
@@ -80,7 +90,7 @@ for (const scheme of ['light', 'dark'] as const) {
 		})
 
 		test('files: row action menu open', async ({ page }, testInfo) => {
-			await page.locator('[data-cy-files-list-row] button[aria-label="Actions"]').first().click()
+			await openRowActions(page)
 			await expect(page.locator('[role="menu"]').first()).toBeVisible()
 			await expectNoA11yViolations(page, testInfo, `state-${scheme}-files-row-actions`, {
 				include: ['[role="menu"]'],
@@ -88,8 +98,8 @@ for (const scheme of ['light', 'dark'] as const) {
 		})
 
 		test('files: details sidebar open', async ({ page }, testInfo) => {
-			await page.locator('[data-cy-files-list-row] button[aria-label="Actions"]').first().click()
-			await page.getByRole('menuitem', { name: 'Details' }).click()
+			await openRowActions(page)
+			await page.locator('[data-cy-files-list-row-action="details"]:visible').first().click()
 			await expect(page.locator('#app-sidebar-vue, .app-sidebar').first()).toBeVisible()
 			await expectNoA11yViolations(page, testInfo, `state-${scheme}-files-sidebar`, {
 				include: ['#app-sidebar-vue, .app-sidebar'],
