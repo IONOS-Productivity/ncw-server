@@ -3,20 +3,20 @@
 #
 # Weekly sweep of every IONOS-forked apps-external/* submodule. Only acts on the two verdicts
 # .dev/docs/how-to/upgrade-fork-app.md already calls unambiguous:
-#   - **mirror bump** (zero fork-only commits): pushes the upstream tag straight to the fork's
-#     branch (fast-forward only — never force-push; cuts a fresh branch instead if history
-#     doesn't fast-forward, matching the nc-notifications precedent), then opens ONE
-#     server-repo PR with the gitlink bumps for every such app this run.
+#   - **mirror bump** (zero fork-only commits): pushes a working branch at the upstream tag and
+#     opens a PR in the fork's own repo (nothing is pushed to the fork's existing branches). If
+#     history doesn't fast-forward, a fresh branch is cut at the tag instead (matching the
+#     nc-notifications precedent) and reported in the run summary for a human.
 #   - **rebase** with a 100%-clean cherry-pick (verified by actually attempting it, not
 #     inferred from the scan): opens PR 1 in the fork's own repo, per upgrade-fork-app.md's
 #     format. Any conflict aborts that app's cherry-pick entirely and leaves it for a human —
 #     never auto-resolved.
 #
-# NOT YET BUILT: a follow-up step that moves the server-repo gitlink once a rebase PR 1 merges
-# and is tagged (upgrade-fork-app.md §10) — today that half of the flow still needs a human to
-# run it by hand after reviewing and merging the bot's PR 1. Add a release-triggered workflow in
-# each fork repo (or a `command-*`-style follow-up here) before relying on this to be fully
-# hands-off for the rebase path.
+# NOT YET BUILT: a follow-up step that moves the server-repo gitlink once a fork PR (mirror or
+# rebase) merges and is tagged (upgrade-fork-app.md §10) — today that half of the flow still
+# needs a human to run it by hand after reviewing and merging the bot's fork PR. Add a
+# release-triggered workflow in each fork repo (or a `command-*`-style follow-up here) before
+# relying on this to be fully hands-off.
 #
 # A `**rebase**, major` row (upstream jumped a major version) is left untouched, same posture as
 # vanilla-apps' **major** rows — a human decides whether to take it.
@@ -82,65 +82,48 @@ jobs:
             /tmp/fork-scan.md \
             /tmp/fork-summary.sh | tee /tmp/fork-bump-log.txt
           source /tmp/fork-summary.sh
-          echo "mirror_count=$(wc -w <<<"${MIRROR_BUMPED:-}")" >> "$GITHUB_OUTPUT"
+          echo "mirror_count=$(wc -w <<<"${MIRROR_READY:-}")" >> "$GITHUB_OUTPUT"
           echo "rebase_count=$(wc -w <<<"${REBASE_READY:-}")" >> "$GITHUB_OUTPUT"
         # bump-fork-apps.sh propagates the scan's own exit 1 on network/rate-limit/not-initialised
         # error — intentionally not caught here.
 
-      # --- mirror-bump path: one combined gitlink PR in ncw-server ---
+      # --- mirror-bump path: PR in each fork's own repo ---
 
-      - name: Create working branch for mirror-bump gitlinks
+      - name: Open PR for each mirror bump
         if: steps.bump.outputs.mirror_count != '0'
-        working-directory: ncw-server
-        run: git switch -c "bot/dev/update-fork-apps-mirror-nc${{ steps.resolve.outputs.nc_target }}-$(date +%Y%m%d)"
-
-      - name: Commit each mirror-bumped gitlink
-        if: steps.bump.outputs.mirror_count != '0'
-        working-directory: ncw-server
-        run: |
-          source /tmp/fork-summary.sh
-          for entry in $MIRROR_BUMPED; do
-            app=${entry%%:*}; rest=${entry#*:}; ref=${rest%%:*}; sha=${rest#*:}
-            app_path="apps-external/$app"
-            git -C "$app_path" fetch origin --quiet
-            git -C "$app_path" checkout --quiet "$sha"
-            git add "$app_path"
-            git commit --quiet -m "IONOS($app): re-pin at $ref ($sha) — vanilla mirror, no IONOS delta" \
-              -m "Resolved SHA: $sha" \
-              -m "Opened by scheduled-fork-apps-bump.yml."
-          done
-
-      - name: Push and open the mirror-bump gitlink PR
-        if: steps.bump.outputs.mirror_count != '0'
-        working-directory: ncw-server
         env:
           GH_TOKEN: ${{ secrets.UPGRADE_BOT_PAT }}
         run: |
-          branch=$(git branch --show-current)
-          git push -u origin "$branch"
-          {
-            echo "## Summary"
-            echo
-            echo "Re-pin every fork app that turned out to be a zero-IONOS-delta vanilla mirror"
-            echo "at the newest compatible upstream tag. Opened automatically by"
-            echo "\`scheduled-fork-apps-bump.yml\`."
-            echo
-            cat /tmp/fork-scan.md
-            echo
-            echo "## Review checklist"
-            echo
-            echo "See [review-bot-pr.md](https://github.com/IONOS-Productivity/nc-docs-and-tools/blob/master/docs/how-to/review-bot-pr.md#3-fork-apps-scheduled-fork-apps-bumpyml) — confirm each app really is still zero-delta (it may have picked up a real IONOS commit since this scan ran)."
-            echo
-            echo "## Checklist"
-            echo
-            echo "- [ ] run \`.dev/container/check_release.sh pr-<PR-number> ncw\` — validate pr locally"
-          } > /tmp/mirror-pr-body.md
-          gh pr create \
-            --repo IONOS-Productivity/ncw-server \
-            --base "${{ steps.resolve.outputs.branch }}" \
-            --head "$branch" \
-            --title "IONOS: re-pin vanilla-mirror fork apps to NC${{ steps.resolve.outputs.nc_target }}-compatible tags (scheduled)" \
-            --body-file /tmp/mirror-pr-body.md
+          source /tmp/fork-summary.sh
+          for entry in $MIRROR_READY; do
+            app=${entry%%:*}; rest=${entry#*:}; working_branch=${rest%%:*}; sha=${rest#*:}
+            clone_dir="/tmp/fork-scratch/$app"
+            fork_repo=$(git -C "$clone_dir" remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')
+            {
+              echo "## Summary"
+              echo
+              echo "This fork has zero IONOS-only commits, so it is a pure mirror of upstream."
+              echo "Fast-forwards the tracked branch to the newest NC${{ steps.resolve.outputs.nc_target }}-compatible"
+              echo "upstream tag (\`$sha\`). Opened automatically by \`scheduled-fork-apps-bump.yml\`."
+              echo
+              echo "## Review checklist"
+              echo
+              echo "See [review-bot-pr.md](https://github.com/IONOS-Productivity/nc-docs-and-tools/blob/master/docs/how-to/review-bot-pr.md#3-fork-apps-scheduled-fork-apps-bumpyml) —"
+              echo "confirm the fork is still zero-delta (it may have picked up a real IONOS commit"
+              echo "since this scan ran)."
+              echo
+              echo "## Checklist"
+              echo
+              echo "- [ ] once merged: move the \`<server-repo>\` gitlink to the new commit (not yet"
+              echo "  automated — see upgrade-fork-app.md §10)"
+            } > "/tmp/pr-body-$app.md"
+            gh pr create \
+              --repo "$fork_repo" \
+              --base "$(git -C "$clone_dir" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#origin/##' || echo main)" \
+              --head "$working_branch" \
+              --title "IONOS($app): fast-forward to NC${{ steps.resolve.outputs.nc_target }}-compatible upstream tag (scheduled)" \
+              --body-file "/tmp/pr-body-$app.md"
+          done
 
       # --- rebase path: PR 1 in each fork's own repo ---
 
@@ -188,6 +171,7 @@ jobs:
         run: |
           source /tmp/fork-summary.sh 2>/dev/null || true
           echo "### Needs human attention (fork-apps sweep)" >> "$GITHUB_STEP_SUMMARY"
+          echo "${MIRROR_BRANCH_CUT:+Fresh branch cut at the upstream tag (history did not fast-forward; review and adopt by hand): $MIRROR_BRANCH_CUT}" >> "$GITHUB_STEP_SUMMARY"
           echo "${REBASE_CONFLICT:-(none)}" >> "$GITHUB_STEP_SUMMARY"
           echo "${SKIPPED_MAJOR:-(none)}" >> "$GITHUB_STEP_SUMMARY"
           echo "${SKIPPED_OTHER:-(none)}" >> "$GITHUB_STEP_SUMMARY"
