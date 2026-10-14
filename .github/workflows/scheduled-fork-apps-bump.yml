@@ -40,6 +40,11 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    env:
+      # Optional trial-run controls (repo variables). ONLY_APPS e.g. "activity"; DRY_RUN "1"
+      # scans and checks cherry-picks but pushes nothing and opens no PRs.
+      ONLY_APPS: ${{ vars.UPGRADE_ONLY_APPS }}
+      DRY_RUN: ${{ vars.UPGRADE_DRY_RUN }}
     steps:
       - name: Checkout ncw-server (default integration branch)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
@@ -62,6 +67,8 @@ jobs:
           git config --global user.name 'ncw-upgrade-bot'
           git config --global user.email 'ncw-upgrade-bot@users.noreply.github.com'
           git config --global url."https://x-access-token:${{ secrets.UPGRADE_BOT_PAT }}@github.com/".insteadOf "https://github.com/"
+          # .gitmodules URLs are SSH (git@github.com:...); route them over HTTPS with the same token.
+          git config --global --add url."https://x-access-token:${{ secrets.UPGRADE_BOT_PAT }}@github.com/".insteadOf "git@github.com:"
 
       - name: Resolve integration branch and NC target
         id: resolve
@@ -90,7 +97,7 @@ jobs:
       # --- mirror-bump path: PR in each fork's own repo ---
 
       - name: Open PR for each mirror bump
-        if: steps.bump.outputs.mirror_count != '0'
+        if: steps.bump.outputs.mirror_count != '0' && env.DRY_RUN != '1'
         env:
           GH_TOKEN: ${{ secrets.UPGRADE_BOT_PAT }}
         run: |
@@ -128,7 +135,7 @@ jobs:
       # --- rebase path: PR 1 in each fork's own repo ---
 
       - name: Open PR 1 for each clean rebase
-        if: steps.bump.outputs.rebase_count != '0'
+        if: steps.bump.outputs.rebase_count != '0' && env.DRY_RUN != '1'
         env:
           GH_TOKEN: ${{ secrets.UPGRADE_BOT_PAT }}
         run: |
