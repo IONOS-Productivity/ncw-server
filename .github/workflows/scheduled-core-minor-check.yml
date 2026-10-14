@@ -48,6 +48,7 @@ jobs:
           repository: IONOS-Productivity/nc-docs-and-tools
           ref: as/dev/scheduled-upgrade-automation # TEMPORARY
           path: nc-docs-and-tools
+          token: ${{ secrets.UPGRADE_BOT_PAT }} # private repo; GITHUB_TOKEN cannot read it
 
       - name: Add upstream remote
         working-directory: ncw-server
