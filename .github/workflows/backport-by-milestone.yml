@@ -1,0 +1,130 @@
+# SPDX-FileCopyrightText: 2026 STRATO GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Backports a merged PR to rc/<milestone title>.
+# Example: PR merged into ionos-dev-v33 with milestone "ncw-v33-2" => PR against rc/ncw-v33-2.
+
+name: Backport by milestone
+
+on:
+  pull_request_target:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Merged PR number to backport'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backport-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  backport:
+    if: >-
+      github.repository_owner == 'IONOS-Productivity' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.pull_request.merged == true &&
+        github.event.pull_request.milestone != null &&
+        !startsWith(github.event.pull_request.base.ref, 'rc/')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+    steps:
+      - name: Resolve PR, milestone and target branch
+        id: meta
+        run: |
+          set -euo pipefail
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json state,title,baseRefName,mergeCommit,milestone,url > pr.json
+          [ "$(jq -r .state pr.json)" = "MERGED" ] || { echo "::error::PR #$PR_NUMBER is not merged"; exit 1; }
+
+          milestone=$(jq -r '.milestone.title // empty' pr.json)
+          base=$(jq -r .baseRefName pr.json)
+          if [ -z "$milestone" ]; then echo "No milestone, nothing to do"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+
+          # Milestone titles are untrusted input: allow only branch-safe characters
+          if ! [[ "$milestone" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Unsupported milestone title"; exit 1
+          fi
+          target="rc/$milestone"
+          if [ "$target" = "$base" ]; then echo "Already targets $target"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if ! gh api "repos/$GITHUB_REPOSITORY/branches/$(jq -rn --arg b "$target" '$b|@uri')" >/dev/null 2>&1; then
+            echo "::notice::Branch $target does not exist, nothing to do"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$target" --head "backport/$PR_NUMBER-to-${target#rc/}" --state all --json number --jq length)
+          if [ "$existing" != "0" ]; then echo "Backport PR already exists"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+
+          {
+            echo "skip=false"
+            echo "target=$target"
+            echo "branch=backport/$PR_NUMBER-to-${target#rc/}"
+            echo "sha=$(jq -r .mergeCommit.oid pr.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout target branch
+        if: steps.meta.outputs.skip != 'true'
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ steps.meta.outputs.target }}
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: true
+
+      - name: Cherry-pick
+        id: pick
+        if: steps.meta.outputs.skip != 'true'
+        env:
+          TARGET: ${{ steps.meta.outputs.target }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$SHA" || git fetch origin "refs/pull/$PR_NUMBER/head"
+          git switch -c "$BRANCH"
+
+          # Merge commits need -m 1 (mainline); squash/rebase merges are plain commits
+          parents=$(git rev-list --parents -n 1 "$SHA" | wc -w)
+          opts=(-x -s)
+          [ "$parents" -gt 2 ] && opts+=(-m 1)
+
+          if git cherry-pick "${opts[@]}" "$SHA"; then
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+          else
+            git cherry-pick --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git push origin "$BRANCH"
+
+      - name: Open backport PR
+        if: steps.meta.outputs.skip != 'true' && steps.pick.outputs.conflict == 'false'
+        env:
+          TARGET: ${{ steps.meta.outputs.target }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+        run: |
+          set -euo pipefail
+          title="[$TARGET] $(jq -r .title pr.json)"
+          body="Backport of #$PR_NUMBER to $TARGET. Cherry-picked with -x."
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "$TARGET" --head "$BRANCH" \
+            --title "$title" --body "$body" --milestone "${TARGET#rc/}"
+
+      - name: Report conflict
+        if: steps.meta.outputs.skip != 'true' && steps.pick.outputs.conflict == 'true'
+        env:
+          TARGET: ${{ steps.meta.outputs.target }}
+        run: |
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Automatic backport to \`$TARGET\` failed with conflicts. Please backport manually."
+          echo "::error::Cherry-pick conflict for $TARGET"
+          exit 1
