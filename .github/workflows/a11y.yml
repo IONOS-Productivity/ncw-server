@@ -54,19 +54,10 @@ jobs:
 
       - name: Start PHP server
         run: |
-          cat > /tmp/router.php <<'PHP'
-          <?php
-          $root = getcwd();
-          $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-          if ($path !== '/' && is_file($root . $path) && !str_ends_with($path, '.php')) { return false; }
-          if (str_ends_with($path, '.php')) { return false; }
-          $_SERVER['SCRIPT_NAME'] = '/index.php';
-          $_SERVER['SCRIPT_FILENAME'] = $root . '/index.php';
-          $_SERVER['PATH_INFO'] = $path;
-          require $root . '/index.php';
-          PHP
-          PHP_CLI_SERVER_WORKERS=4 nohup php -S 127.0.0.1:8080 -t . /tmp/router.php > /tmp/php-server.log 2>&1 &
+          PHP_CLI_SERVER_WORKERS=4 nohup php -S 127.0.0.1:8080 -t . a11y/scripts/router.php > /tmp/php-server.log 2>&1 &
           for i in $(seq 1 30); do curl -sf http://localhost:8080/login > /dev/null && break; sleep 1; done
+          curl -s -o /dev/null -w 'login=%{http_code}\n' http://localhost:8080/login
+          curl -s -o /dev/null -w 'dav=%{http_code} (401 is expected without login)\n' http://localhost:8080/remote.php/dav/
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -92,7 +83,7 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: a11y
         run: |
-          npm run summary >> "$GITHUB_STEP_SUMMARY"
+          npm run --silent summary >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}

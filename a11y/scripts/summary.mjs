@@ -5,7 +5,7 @@
 // Builds a11y-results/SUMMARY.md from the findings-<label>.jsonl files written by helpers/axe.ts
 //  - token findings (synthetic harness, ionos only)
 //  - page findings introduced by the IONOS theme = in `ionos` but not in `default` baseline
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -50,5 +50,6 @@ for (const f of baseline.length ? introduced : pagesIonos) {
 	md += `- \`${f.scenario}\` - ${f.rule} (${f.impact}): ${f.help} - \`${f.target}\`\n`
 }
 
+mkdirSync(dir, { recursive: true })
 writeFileSync(join(dir, 'SUMMARY.md'), md)
 console.log(md)
