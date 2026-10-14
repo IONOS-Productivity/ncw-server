@@ -36,7 +36,9 @@ jobs:
       contents: write
       pull-requests: write
     env:
-      GH_TOKEN: ${{ github.token }}
+      # PRs and pushes made with GITHUB_TOKEN do not trigger other workflows, so
+      # prefer a PAT / app token (secret BACKPORT_TOKEN) to get CI on backport PRs.
+      GH_TOKEN: ${{ secrets.BACKPORT_TOKEN || github.token }}
       PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
     steps:
       - name: Resolve PR, milestone and target branch
@@ -44,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --json state,title,baseRefName,mergeCommit,milestone,url > pr.json
+            --json state,title,baseRefName,milestone,url > pr.json
           [ "$(jq -r .state pr.json)" = "MERGED" ] || { echo "::error::PR #$PR_NUMBER is not merged"; exit 1; }
 
           milestone=$(jq -r '.milestone.title // empty' pr.json)
@@ -67,7 +69,6 @@ jobs:
             echo "skip=false"
             echo "target=$target"
             echo "branch=backport/$PR_NUMBER-to-${target#rc/}"
-            echo "sha=$(jq -r .mergeCommit.oid pr.json)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout target branch
@@ -77,6 +78,7 @@ jobs:
           ref: ${{ steps.meta.outputs.target }}
           fetch-depth: 0
           submodules: false
+          token: ${{ secrets.BACKPORT_TOKEN || github.token }}
           persist-credentials: true
 
       - name: Cherry-pick
@@ -85,27 +87,28 @@ jobs:
         env:
           TARGET: ${{ steps.meta.outputs.target }}
           BRANCH: ${{ steps.meta.outputs.branch }}
-          SHA: ${{ steps.meta.outputs.sha }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin "$SHA" || git fetch origin "refs/pull/$PR_NUMBER/head"
+          # Backport the PR's own commits (not the merge result) so that squash,
+          # merge and rebase-and-merge all yield the full change. The PR head ref
+          # keeps the original commits reachable after any merge method.
+          git fetch origin "refs/pull/$PR_NUMBER/head"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/commits" \
+            --jq '.[] | select((.parents | length) == 1) | .sha' > commits.txt
+          [ -s commits.txt ] || { echo "::error::No commits found for PR #$PR_NUMBER"; exit 1; }
+
           git switch -c "$BRANCH"
-
-          # Merge commits need -m 1 (mainline); squash/rebase merges are plain commits
-          parents=$(git rev-list --parents -n 1 "$SHA" | wc -w)
-          opts=(-x -s)
-          [ "$parents" -gt 2 ] && opts+=(-m 1)
-
-          if git cherry-pick "${opts[@]}" "$SHA"; then
+          if xargs git cherry-pick -x -s < commits.txt; then
             echo "conflict=false" >> "$GITHUB_OUTPUT"
           else
             git cherry-pick --abort
             echo "conflict=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git push origin "$BRANCH"
+          # The branch is owned by this workflow; overwrite leftovers of a failed earlier run
+          git push --force origin "$BRANCH"
 
       - name: Open backport PR
         if: steps.meta.outputs.skip != 'true' && steps.pick.outputs.conflict == 'false'
