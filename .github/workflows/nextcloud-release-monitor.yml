@@ -1,0 +1,201 @@
+# SPDX-FileCopyrightText: 2026 STRATO GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Checks for new stable major Nextcloud releases every Wednesday at 06:00 UTC.
+# When a new major version is detected (highest ionos-dev-v<N> branch < upstream),
+# it sends a Google Chat notification and triggers the update-fork workflow.
+
+name: Nextcloud Release Monitor
+
+on:
+  schedule:
+    - cron: '0 6 * * 3'  # Wednesday 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: 'Force-check a specific NC version (e.g. v36.0.0) – skips branch comparison'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run – detect release and write summary, but do not trigger update-fork'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+permissions:
+  contents: read
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version:      ${{ steps.check.outputs.new_version }}
+      new_major:        ${{ steps.check.outputs.new_major }}
+      our_major:        ${{ steps.check.outputs.our_major }}
+      our_branch:       ${{ steps.check.outputs.our_branch }}
+      release_url:      ${{ steps.check.outputs.release_url }}
+      update_needed:    ${{ steps.check.outputs.update_needed }}
+
+    steps:
+      - name: Determine latest stable upstream release
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_VERSION: ${{ inputs.force_version }}
+        run: |
+          set -euo pipefail
+
+          # ── 1. Latest stable tag from nextcloud/server ────────────────────
+          if [[ -n "${FORCE_VERSION:-}" ]]; then
+            LATEST_TAG="$FORCE_VERSION"
+          else
+            # Fetch all releases, filter out pre-releases and pick highest stable tag
+            LATEST_TAG=$(gh api repos/nextcloud/server/releases \
+              --paginate \
+              --jq '[.[] | select(.prerelease == false) | .tag_name] | sort_by(split(".") | map(tonumber)) | last')
+          fi
+
+          LATEST_MAJOR=$(echo "$LATEST_TAG" | grep -oP '^\D*\K[0-9]+')
+          RELEASE_URL="https://github.com/nextcloud/server/releases/tag/${LATEST_TAG}"
+
+          echo "Upstream latest stable: $LATEST_TAG (major $LATEST_MAJOR)"
+
+          # ── 2. Find the highest ionos-dev-v<N> branch in this repo ────────
+          OUR_BRANCHES=$(gh api repos/${{ github.repository }}/branches \
+            --paginate \
+            --jq '[.[] | .name | select(test("^ionos-dev-v[0-9]+$"))] | sort_by(ltrimstr("ionos-dev-v") | tonumber)')
+          OUR_BRANCH=$(echo "$OUR_BRANCHES" | jq -r 'last // empty')
+          OUR_MAJOR=$(echo "$OUR_BRANCH" | grep -oP '[0-9]+$' || echo "0")
+
+          echo "Our highest branch: ${OUR_BRANCH:-none} (major $OUR_MAJOR)"
+
+          # ── 3. Decide whether an update is needed ─────────────────────────
+          UPDATE_NEEDED="false"
+          if (( LATEST_MAJOR > OUR_MAJOR )); then
+            UPDATE_NEEDED="true"
+          fi
+
+          echo "Update needed: $UPDATE_NEEDED"
+
+          {
+            echo "new_version=$LATEST_TAG"
+            echo "new_major=$LATEST_MAJOR"
+            echo "our_major=$OUR_MAJOR"
+            echo "our_branch=${OUR_BRANCH:-}"
+            echo "release_url=$RELEASE_URL"
+            echo "update_needed=$UPDATE_NEEDED"
+          } >> "$GITHUB_OUTPUT"
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: check-release
+    # Always run so we get a job summary; the update_needed check lives inside the step.
+    if: always()
+    steps:
+      - name: Write job summary
+        env:
+          UPDATE_NEEDED: ${{ needs.check-release.outputs.update_needed }}
+          NEW_VERSION:   ${{ needs.check-release.outputs.new_version }}
+          NEW_MAJOR:     ${{ needs.check-release.outputs.new_major }}
+          OUR_BRANCH:    ${{ needs.check-release.outputs.our_branch }}
+          RELEASE_URL:   ${{ needs.check-release.outputs.release_url }}
+          RUN_URL:       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DRY_RUN:       ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$UPDATE_NEEDED" == "true" ]]; then
+            ACTION="Triggering \`nextcloud-update-fork\` workflow"
+            [[ "$DRY_RUN" == "true" ]] && ACTION="Triggering \`nextcloud-update-fork\` workflow *(dry run – no push/PR)*"
+            {
+              echo "## 🚀 New Nextcloud major release detected: \`${NEW_VERSION}\`"
+              echo ""
+              echo "| | |"
+              echo "|---|---|"
+              echo "| Upstream release | [\`${NEW_VERSION}\`](${RELEASE_URL}) |"
+              echo "| Our current base | \`${OUR_BRANCH}\` |"
+              echo "| Action | ${ACTION} |"
+              echo ""
+              echo "[View this run](${RUN_URL})"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## ✅ No update needed"
+              echo ""
+              echo "Latest upstream stable: \`${NEW_VERSION}\` — already covered by \`${OUR_BRANCH}\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Send Google Chat notification
+        # Only when an update is needed; webhook presence is checked inside the run
+        # (secrets context is unavailable in if: expressions)
+        if: needs.check-release.outputs.update_needed == 'true'
+        env:
+          WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          NEW_VERSION:  ${{ needs.check-release.outputs.new_version }}
+          NEW_MAJOR:    ${{ needs.check-release.outputs.new_major }}
+          OUR_BRANCH:   ${{ needs.check-release.outputs.our_branch }}
+          RELEASE_URL:  ${{ needs.check-release.outputs.release_url }}
+          RUN_URL:      ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          # No-op when webhook is not configured (secret unavailable in if: expressions)
+          if [[ -z "${WEBHOOK_URL:-}" ]]; then
+            echo "GOOGLE_CHAT_WEBHOOK_URL not set – skipping notification"
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg title "🚀 New Nextcloud Major Release: ${NEW_VERSION}" \
+            --arg body "$(printf \
+              "Upstream released *%s* – our fork is still on *%s*.\n\nRelease notes: %s\n\nThe update-fork workflow will now create *ionos-dev-v%s* with cherry-picked STRATO customizations." \
+              "$NEW_VERSION" "$OUR_BRANCH" "$RELEASE_URL" "$NEW_MAJOR")" \
+            --arg run_url "$RUN_URL" \
+            '{
+              "cards": [{
+                "header": { "title": $title, "subtitle": "ncw-server IONOS fork update" },
+                "sections": [{
+                  "widgets": [
+                    { "textParagraph": { "text": $body } },
+                    { "buttons": [{ "textButton": { "text": "View workflow run", "onClick": { "openLink": { "url": $run_url } } } }] }
+                  ]
+                }]
+              }]
+            }')
+
+          curl -s -X POST \
+            -H 'Content-Type: application/json' \
+            -d "$PAYLOAD" \
+            "$WEBHOOK_URL"
+
+  trigger-update:
+    runs-on: ubuntu-latest
+    needs: check-release
+    if: needs.check-release.outputs.update_needed == 'true'
+    permissions:
+      actions: write  # required to trigger a workflow_dispatch
+    steps:
+      - name: Trigger update-fork workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ needs.check-release.outputs.new_version }}
+          NEW_MAJOR:   ${{ needs.check-release.outputs.new_major }}
+          OUR_BRANCH:  ${{ needs.check-release.outputs.our_branch }}
+          DRY_RUN:     ${{ inputs.dry_run || 'false' }}
+        run: |
+          # Always trigger the update-fork workflow; dry_run is passed through
+          # so it runs the cherry-pick simulation but skips push and PR creation.
+          # Use --input with a JSON body – bracket syntax in --field does not
+          # produce a nested object and causes HTTP 422 from the dispatches API.
+          jq -n \
+            --arg ref  "${{ github.ref_name }}" \
+            --arg ver  "$NEW_VERSION" \
+            --arg maj  "$NEW_MAJOR" \
+            --arg prev "$OUR_BRANCH" \
+            --arg dry  "$DRY_RUN" \
+            '{ref: $ref, inputs: {new_version: $ver, new_major: $maj, prev_branch: $prev, dry_run: $dry}}' \
+          | gh api repos/${{ github.repository }}/actions/workflows/nextcloud-update-fork.yml/dispatches \
+              --method POST \
+              --input -

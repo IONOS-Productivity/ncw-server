@@ -1,0 +1,577 @@
+# SPDX-FileCopyrightText: 2026 STRATO GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Creates a new ionos-dev-v<N> branch from the upstream release tag and
+# reapplies the IONOS file delta (grouped by theme) on top of it via 3-way
+# merge. Opens a draft PR for review.
+#
+# Strategy (mirrors .tools/docs/how-to/update-nextcloud-major.md):
+#   1. Enumerate files the fork changed vs its vanilla base (excl. submodules /
+#      IONOS/ / apps-external/ / 3rdparty/)
+#   2. For each file, detect whether the patch is already upstream (3-way merge
+#      produces no change) → drop and record
+#   3. For the rest, apply fork's version via 3-way merge:
+#        git merge-file -p new_base_ver old_base_ver fork_ver
+#      → clean merge or conflict markers left in-file for manual resolution
+#   4. Commit the result as grouped thematic commits (build, theming, ci, misc)
+#   5. Add a placeholder submodule-pin commit so CI can enumerate the build
+#      matrix (IONOS/ at current main, apps-external/* at prev-branch commits)
+#
+# Inputs (from release-monitor or manual dispatch):
+#   new_version  – upstream tag, e.g. "v34.0.4"
+#   new_major    – major version number, e.g. "34"
+#   prev_branch  – our previous base branch, e.g. "ionos-dev-v33"
+#
+# Requirements:
+#   secrets.UPSTREAM_PAT         – PAT with contents:write + pull-requests:write
+#   secrets.GOOGLE_CHAT_WEBHOOK_URL – for result notifications (optional)
+
+name: Update IONOS Fork to new Nextcloud Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      new_version:
+        description: 'Upstream release tag to update to (e.g. v34.0.4)'
+        required: true
+        type: string
+      new_major:
+        description: 'Major version number (e.g. 34)'
+        required: true
+        type: string
+      prev_branch:
+        description: 'Previous IONOS branch to diff from (e.g. ionos-dev-v33)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run – compute delta and write summary, but do not push or create PR'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REMOTE: upstream-nc
+  NEW_BRANCH:    ionos-dev-v${{ inputs.new_major }}
+  UPDATE_BRANCH: update-to-v${{ inputs.new_major }}
+
+jobs:
+  create-update-branch:
+    runs-on: ubuntu-latest
+    steps:
+      # ── 0. Checkout with full history ──────────────────────────────────────
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # ── 1. Fetch upstream tag ──────────────────────────────────────────────
+      - name: Fetch upstream nextcloud/server tag ${{ inputs.new_version }}
+        run: |
+          set -euo pipefail
+          git remote add "$UPSTREAM_REMOTE" https://github.com/nextcloud/server.git
+          git fetch "$UPSTREAM_REMOTE" tag "${{ inputs.new_version }}" --no-tags
+          echo "Upstream tag fetched: ${{ inputs.new_version }}"
+
+      # ── 2. Create the new base branch ─────────────────────────────────────
+      - name: Create ${{ env.NEW_BRANCH }} from ${{ inputs.new_version }}
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --exit-code origin "refs/heads/$NEW_BRANCH" &>/dev/null; then
+            echo "Branch $NEW_BRANCH already exists on origin – checking it out."
+            git fetch origin "$NEW_BRANCH"
+            git checkout -b "$NEW_BRANCH" "origin/$NEW_BRANCH"
+            echo "BRANCH_EXISTED=true" >> "$GITHUB_ENV"
+          else
+            git checkout -b "$NEW_BRANCH" "${{ inputs.new_version }}"
+            if [[ "$DRY_RUN" != "true" ]]; then
+              git push origin "$NEW_BRANCH"
+              echo "Created and pushed $NEW_BRANCH"
+            else
+              echo "DRY RUN – $NEW_BRANCH created locally, not pushed"
+            fi
+            echo "BRANCH_EXISTED=false" >> "$GITHUB_ENV"
+          fi
+
+      # ── 3. Find the vanilla upstream base tag for the previous branch ──────
+      #
+      # Must be a pure semver tag (vN.M.P) – not an IONOS tag like
+      # v33.0.9.1-3cfbc3f. We require exactly three numeric segments.
+      - name: Determine previous vanilla upstream base tag
+        id: prev-base
+        env:
+          PREV_BRANCH: ${{ inputs.prev_branch }}
+        run: |
+          set -euo pipefail
+          # Fetch the prev branch from our fork (for the delta) and all vanilla
+          # tags from upstream (upstream-nc was added in step 1).
+          git fetch origin "$PREV_BRANCH"
+          git fetch "$UPSTREAM_REMOTE" --tags --no-recurse-submodules
+          PREV_MAJOR=$(echo "$PREV_BRANCH" | grep -oP '[0-9]+$')
+
+          # Strict vN.M.P pattern – excludes IONOS tags (e.g. v33.0.9.1-3cfbc3f)
+          # and pre-releases. Tags come from upstream-nc, merged check uses the
+          # fork branch which shares the same vanilla commit history.
+          PREV_TAG=$(git tag --sort=-version:refname \
+            --merged "origin/$PREV_BRANCH" \
+            | grep -E "^v${PREV_MAJOR}\.[0-9]+\.[0-9]+$" \
+            | head -1)
+
+          if [[ -z "$PREV_TAG" ]]; then
+            echo "::error::Could not find a vanilla vN.M.P tag on $PREV_BRANCH"
+            exit 1
+          fi
+
+          echo "Previous vanilla tag: $PREV_TAG"
+          echo "tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+
+      # ── 4. Enumerate the fork delta (file level, excl. submodules) ─────────
+      #
+      # We diff file names only, excluding paths managed as git submodules or
+      # generated by the IONOS build pipeline (IONOS/, apps-external/, 3rdparty/).
+      # Per the upgrade doc §4:
+      #   /tmp/fork     – files the fork changed vs its vanilla base
+      #   /tmp/upstream – files upstream changed from old_tag → new_tag
+      #   /tmp/overlap  – intersection: real conflict candidates
+      - name: Enumerate fork delta
+        id: delta
+        env:
+          PREV_TAG:    ${{ steps.prev-base.outputs.tag }}
+          NEW_VERSION: ${{ inputs.new_version }}
+          PREV_BRANCH: ${{ inputs.prev_branch }}
+        run: |
+          set -euo pipefail
+
+          # Files the fork changed (excl. submodule dirs and generated output)
+          git diff --name-only \
+            "$PREV_TAG" "origin/$PREV_BRANCH" \
+            -- . \
+            ':!apps-external' ':!IONOS' ':!3rdparty' \
+            | sort > /tmp/fork
+
+          # Files upstream changed between the two vanilla tags
+          git diff --name-only \
+            "$PREV_TAG" "${{ inputs.new_version }}" \
+            | sort > /tmp/upstream
+
+          # Intersection – the real conflict surface
+          comm -12 /tmp/fork /tmp/upstream > /tmp/overlap
+
+          FORK_COUNT=$(wc -l < /tmp/fork)
+          OVERLAP_COUNT=$(wc -l < /tmp/overlap)
+
+          echo "Fork delta: $FORK_COUNT files"
+          echo "Of which upstream also touched: $OVERLAP_COUNT files"
+
+          echo "fork_count=$FORK_COUNT"     >> "$GITHUB_OUTPUT"
+          echo "overlap_count=$OVERLAP_COUNT" >> "$GITHUB_OUTPUT"
+
+      # ── 5. Classify each file and apply via 3-way merge ───────────────────
+      #
+      # For every file the fork changed:
+      #   UPSTREAMED – 3-way merge onto new tag produces no change  → drop
+      #   CLEAN      – merge applies without conflict markers        → apply
+      #   CONFLICT   – merge leaves conflict markers                 → apply as-is (PR shows them)
+      #   ADDED      – file did not exist at OLD_TAG                 → check new tag; warn if both added
+      #   GONE       – file gone in NEW_TAG                          → warn, skip
+      - name: Apply fork delta via 3-way merge
+        id: apply
+        env:
+          PREV_TAG:    ${{ steps.prev-base.outputs.tag }}
+          PREV_BRANCH: ${{ inputs.prev_branch }}
+          NEW_VERSION: ${{ inputs.new_version }}
+        run: |
+          set -euo pipefail
+
+          git checkout -b "$UPDATE_BRANCH" "$NEW_BRANCH"
+
+          UPSTREAMED=()
+          CLEAN=()
+          CONFLICTED=()
+          ADDED=()
+          GONE=()
+
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+
+            # Fetch the three versions of the file.
+            # Use if/then instead of capturing $? – set -e aborts before the
+            # assignment if the command fails when used as "cmd; VAR=$?".
+            if git show "${PREV_TAG}:${f}" > /tmp/base 2>/dev/null; then
+              BASE_EXISTS=0
+            else
+              BASE_EXISTS=1
+            fi
+            if git show "${{ inputs.new_version }}:${f}" > /tmp/new 2>/dev/null; then
+              NEW_EXISTS=0
+            else
+              NEW_EXISTS=1
+            fi
+            git show "origin/${PREV_BRANCH}:${f}" > /tmp/fork_f 2>/dev/null || true
+
+            if [[ $BASE_EXISTS -ne 0 ]]; then
+              # File added by the fork (did not exist at OLD_TAG)
+              if [[ $NEW_EXISTS -eq 0 ]]; then
+                echo "ADDED-CONFLICT $f  (both fork and upstream added it – needs manual check)"
+                CONFLICTED+=("ADDED-CONFLICT|||$f")
+              else
+                echo "ADDED-CLEAN $f  (fork-only addition)"
+                mkdir -p "$(dirname "$f")"
+                cp /tmp/fork_f "$f"
+                ADDED+=("$f")
+              fi
+              continue
+            fi
+
+            if [[ $NEW_EXISTS -ne 0 ]]; then
+              echo "GONE $f  (upstream removed this file)"
+              GONE+=("$f")
+              continue
+            fi
+
+            # 3-way merge: new-base / old-base / fork
+            # merge-file exits non-zero on conflicts but still writes output,
+            # so capture the exit code without letting set -e fire.
+            if git merge-file -q -p /tmp/new /tmp/base /tmp/fork_f > /tmp/merged 2>/dev/null; then
+              MERGE_CLEAN=0
+            else
+              MERGE_CLEAN=1
+            fi
+
+            if [[ $MERGE_CLEAN -eq 0 ]]; then
+              # Clean merge – check if the result differs from the new base
+              if cmp -s /tmp/merged /tmp/new; then
+                echo "UPSTREAMED $f"
+                UPSTREAMED+=("$f")
+                continue
+              fi
+              echo "CLEAN $f"
+              cp /tmp/merged "$f"
+              CLEAN+=("$f")
+            else
+              echo "CONFLICT $f"
+              cp /tmp/merged "$f"   # contains conflict markers
+              CONFLICTED+=("CONFLICT|||$f")
+            fi
+          done < /tmp/fork
+
+          # Stage everything modified by the loop above
+          git add -A
+
+          # Write result lists
+          printf '%s\n' "${UPSTREAMED[@]+"${UPSTREAMED[@]}"}" > /tmp/upstreamed.txt
+          printf '%s\n' "${CLEAN[@]+"${CLEAN[@]}"}${ADDED[@]+"${ADDED[@]}"}" > /tmp/clean.txt
+          printf '%s\n' "${CONFLICTED[@]+"${CONFLICTED[@]}"}" > /tmp/conflicted.txt
+          printf '%s\n' "${GONE[@]+"${GONE[@]}"}" > /tmp/gone.txt
+
+          CLEAN_COUNT=$(( ${#CLEAN[@]} + ${#ADDED[@]} ))
+          CONFLICT_COUNT=${#CONFLICTED[@]}
+          UP_COUNT=${#UPSTREAMED[@]}
+          GONE_COUNT=${#GONE[@]}
+
+          echo "clean_count=$CLEAN_COUNT"       >> "$GITHUB_OUTPUT"
+          echo "conflict_count=$CONFLICT_COUNT" >> "$GITHUB_OUTPUT"
+          echo "upstreamed_count=$UP_COUNT"     >> "$GITHUB_OUTPUT"
+          echo "gone_count=$GONE_COUNT"         >> "$GITHUB_OUTPUT"
+          echo "has_conflicts=$( (( CONFLICT_COUNT > 0 )) && echo true || echo false )" \
+            >> "$GITHUB_OUTPUT"
+
+      # ── 6. Commit the applied delta ───────────────────────────────────────
+      #
+      # Group into themed commits that mirror the structure of PR 402 and the
+      # upgrade doc §6. Submodule pins are committed separately as a placeholder
+      # so the build matrix can run (IONOS/ stays at its current pointer;
+      # apps-external/* stay at their prev-branch commits and must be bumped
+      # manually per upgrade-fork-app.md / upgrade-vanilla-app-submodule.md).
+      - name: Commit delta as grouped thematic commits
+        id: commit
+        env:
+          PREV_TAG:    ${{ steps.prev-base.outputs.tag }}
+          NEW_VERSION: ${{ inputs.new_version }}
+          PREV_BRANCH: ${{ inputs.prev_branch }}
+          DRY_RUN:     ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          # Helper: commit a group if there are staged changes matching a path set
+          commit_group() {
+            local msg="$1"; shift
+            local paths=("$@")
+            # Stage only the group's paths
+            git add -- "${paths[@]}" 2>/dev/null || true
+            if git diff --cached --quiet; then
+              echo "  (no changes for: $msg)"
+              return
+            fi
+            git commit -m "$(printf '%s\n\nReapplied onto %s from %s (%s base).\nGenerated by nextcloud-update-fork workflow.' "$msg" "$NEW_VERSION" "$PREV_BRANCH" "$PREV_TAG")"
+            echo "  Committed: $msg"
+          }
+
+          # ── Thematic groups (extend as needed) ──────────────────────────
+          commit_group "IONOS(build): reapply build/infra delta onto $NEW_VERSION" \
+            '.github/' 'build/' 'Makefile' 'composer.json' 'composer.lock' \
+            'package.json' 'package-lock.json' '.gitignore' '.htaccess' \
+            'version.php'
+
+          commit_group "IONOS(theming): reapply theming delta onto $NEW_VERSION" \
+            'apps/theming/' 'core/css/' 'core/img/' 'core/templates/'
+
+          commit_group "IONOS(settings): reapply settings-delegation delta onto $NEW_VERSION" \
+            'apps/settings/' 'lib/private/Settings/' 'lib/public/Settings/'
+
+          commit_group "IONOS(core): reapply miscellaneous core delta onto $NEW_VERSION" \
+            'lib/' 'core/' 'apps/' \
+            --pathspec-from-file=/tmp/clean.txt
+
+          # Catch-all: anything still staged (files not covered by the groups above)
+          if ! git diff --cached --quiet; then
+            git commit -m "$(printf 'IONOS(misc): reapply remaining delta onto %s\n\nReapplied onto %s from %s (%s base).\nGenerated by nextcloud-update-fork workflow.' "$NEW_VERSION" "$NEW_VERSION" "$PREV_BRANCH" "$PREV_TAG")"
+            echo "  Committed: catch-all remaining changes"
+          fi
+
+          # ── Submodule placeholder commit ─────────────────────────────────
+          # Pin IONOS/ at current HEAD and apps-external/* at their prev-branch
+          # commits so the build matrix job (make -f IONOS/Makefile ...) can run.
+          git checkout "origin/$PREV_BRANCH" -- IONOS apps-external .gitmodules 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "$(printf 'IONOS(submodules): pin IONOS/ and apps-external/* at %s placeholders\n\nIONOS/ is pinned at its current main commit. apps-external/* are pinned at\ntheir %s commits as placeholders. Each app submodule must be bumped\nto its %s-compatible tag separately per:\n  - vanilla apps:    upgrade-vanilla-app-submodule.md\n  - IONOS fork apps: upgrade-fork-app.md' "$PREV_BRANCH" "$PREV_BRANCH" "$NEW_VERSION")"
+          fi
+
+          echo "Commit step complete"
+
+      # ── 7. Push ────────────────────────────────────────────────────────────
+      - name: Push update branch
+        if: inputs.dry_run != 'true'
+        run: |
+          git push origin "$UPDATE_BRANCH"
+
+      # ── 8. Build PR body ───────────────────────────────────────────────────
+      - name: Build PR description
+        id: pr-body
+        env:
+          NEW_VERSION:       ${{ inputs.new_version }}
+          PREV_BRANCH:       ${{ inputs.prev_branch }}
+          PREV_TAG:          ${{ steps.prev-base.outputs.tag }}
+          FORK_COUNT:        ${{ steps.delta.outputs.fork_count }}
+          OVERLAP_COUNT:     ${{ steps.delta.outputs.overlap_count }}
+          CLEAN_COUNT:       ${{ steps.apply.outputs.clean_count }}
+          CONFLICT_COUNT:    ${{ steps.apply.outputs.conflict_count }}
+          UPSTREAMED_COUNT:  ${{ steps.apply.outputs.upstreamed_count }}
+          GONE_COUNT:        ${{ steps.apply.outputs.gone_count }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## Update \`${NEW_BRANCH}\` → Nextcloud ${NEW_VERSION}"
+            echo ""
+            echo "This PR reapplies the IONOS file delta from \`${PREV_BRANCH}\`"
+            echo "(vanilla base: \`${PREV_TAG}\`) onto \`${NEW_VERSION}\` via 3-way merge."
+            echo "Submodule pins are placeholders – bump each app separately per the upgrade guides."
+            echo ""
+            echo "| | Files |"
+            echo "|---|---|"
+            echo "| Total fork delta (excl. submodule paths) | ${FORK_COUNT} |"
+            echo "| Of which upstream also touched | ${OVERLAP_COUNT} |"
+            echo "| ✅ Applied cleanly | ${CLEAN_COUNT} |"
+            echo "| ⏭ Dropped (already upstream) | ${UPSTREAMED_COUNT} |"
+            echo "| ⚠️ Conflict markers left in-file | ${CONFLICT_COUNT} |"
+            echo "| 🗑 Gone upstream (file removed) | ${GONE_COUNT} |"
+            echo ""
+
+            if [[ -s /tmp/conflicted.txt ]]; then
+              echo "### ⚠️ Files with conflict markers – manual resolution required"
+              echo ""
+              while IFS='|||' read -r kind f; do
+                [[ -z "$f" ]] && continue
+                if [[ "$kind" == "ADDED-CONFLICT" ]]; then
+                  echo "- \`$f\` _(both fork and upstream added this file)_"
+                else
+                  echo "- \`$f\`"
+                fi
+              done < /tmp/conflicted.txt
+              echo ""
+            fi
+
+            if [[ -s /tmp/upstreamed.txt ]]; then
+              echo "### ⏭ Dropped – patch already absorbed upstream"
+              echo ""
+              while IFS= read -r f; do
+                [[ -z "$f" ]] && continue
+                echo "- \`$f\`"
+              done < /tmp/upstreamed.txt
+              echo ""
+            fi
+
+            if [[ -s /tmp/gone.txt ]]; then
+              echo "### 🗑 Files removed upstream (verify intentional)"
+              echo ""
+              while IFS= read -r f; do
+                [[ -z "$f" ]] && continue
+                echo "- \`$f\`"
+              done < /tmp/gone.txt
+              echo ""
+            fi
+
+            echo "### 🔗 Submodule pins (need manual update)"
+            echo ""
+            echo "The following were pinned to their \`${PREV_BRANCH}\` commits as placeholders:"
+            echo ""
+            git -C . submodule status 2>/dev/null | awk '{print "- `"$2"`"}' || true
+            echo ""
+            echo "Update each per:"
+            echo "- vanilla apps: \`upgrade-vanilla-app-submodule.md\`"
+            echo "- IONOS fork apps: \`upgrade-fork-app.md\`"
+            echo ""
+
+            echo "---"
+            echo "_Generated by [nextcloud-update-fork](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) on $(date -u '+%Y-%m-%d %H:%M UTC')_"
+          } > /tmp/pr_body.md
+
+          cat /tmp/pr_body.md
+
+      # ── 9. Open the PR ─────────────────────────────────────────────────────
+      - name: Create Pull Request
+        if: inputs.dry_run != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.UPSTREAM_PAT || secrets.GITHUB_TOKEN }}
+          HAS_CONFLICTS: ${{ steps.apply.outputs.has_conflicts }}
+          NEW_VERSION:   ${{ inputs.new_version }}
+        run: |
+          set -euo pipefail
+
+          LABELS="update,major-release"
+          if [[ "$HAS_CONFLICTS" == "true" ]]; then
+            LABELS="$LABELS,needs-manual-resolution"
+          fi
+
+          PR_URL=$(gh pr create \
+            --repo "${{ github.repository }}" \
+            --base "$NEW_BRANCH" \
+            --head "$UPDATE_BRANCH" \
+            --draft \
+            --title "Update fork to Nextcloud ${NEW_VERSION}" \
+            --body-file /tmp/pr_body.md \
+            --label "$LABELS")
+
+          echo "PR created: $PR_URL"
+          echo "pr_url=$PR_URL" >> "$GITHUB_ENV"
+
+      # ── 10. Write job summary ──────────────────────────────────────────────
+      - name: Write job summary
+        if: always()
+        env:
+          NEW_VERSION:      ${{ inputs.new_version }}
+          PREV_BRANCH:      ${{ inputs.prev_branch }}
+          PREV_TAG:         ${{ steps.prev-base.outputs.tag }}
+          FORK_COUNT:       ${{ steps.delta.outputs.fork_count }}
+          CLEAN_COUNT:      ${{ steps.apply.outputs.clean_count }}
+          CONFLICT_COUNT:   ${{ steps.apply.outputs.conflict_count }}
+          UPSTREAMED_COUNT: ${{ steps.apply.outputs.upstreamed_count }}
+          GONE_COUNT:       ${{ steps.apply.outputs.gone_count }}
+          HAS_CONFLICTS:    ${{ steps.apply.outputs.has_conflicts }}
+          PR_URL:           ${{ env.pr_url || '' }}
+          RUN_URL:          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS:       ${{ job.status }}
+          DRY_RUN:          ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$JOB_STATUS" == "success" ]]; then
+            ICON=$([[ "$HAS_CONFLICTS" == "true" ]] && echo "⚠️" || echo "✅")
+            STATUS=$([[ "$HAS_CONFLICTS" == "true" ]] && echo "Done – conflict markers need manual resolution" || echo "All files applied cleanly")
+          else
+            ICON="❌"; STATUS="Workflow failed"
+          fi
+
+          {
+            echo "## ${ICON} Fork update: ${NEW_VERSION}"
+            [[ "$DRY_RUN" == "true" ]] && echo "> **Dry run** – no branch was pushed, no PR was created."
+            echo ""
+            echo "**Status:** ${STATUS}"
+            echo ""
+            echo "| | Files |"
+            echo "|---|---|"
+            echo "| Fork delta (excl. submodule paths) | ${FORK_COUNT:-—} |"
+            echo "| ✅ Applied cleanly | ${CLEAN_COUNT:-—} |"
+            echo "| ⏭ Dropped (already upstream) | ${UPSTREAMED_COUNT:-—} |"
+            echo "| ⚠️ Conflict markers | ${CONFLICT_COUNT:-—} |"
+            echo "| 🗑 Gone upstream | ${GONE_COUNT:-—} |"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Upstream release | \`${NEW_VERSION}\` |"
+            echo "| Previous IONOS branch | \`${PREV_BRANCH}\` (base: \`${PREV_TAG:-unknown}\`) |"
+            echo "| New branch | \`$NEW_BRANCH\` |"
+            [[ -n "${PR_URL:-}" ]] && echo "| Pull Request | [${PR_URL}](${PR_URL}) |"
+            echo ""
+            if [[ -s /tmp/conflicted.txt ]]; then
+              echo "### ⚠️ Files needing manual resolution"
+              echo '```'
+              cat /tmp/conflicted.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 11. Notify Google Chat ─────────────────────────────────────────────
+      - name: Notify Google Chat – result
+        if: always()
+        env:
+          WEBHOOK_URL:      ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          NEW_VERSION:      ${{ inputs.new_version }}
+          CLEAN_COUNT:      ${{ steps.apply.outputs.clean_count }}
+          CONFLICT_COUNT:   ${{ steps.apply.outputs.conflict_count }}
+          UPSTREAMED_COUNT: ${{ steps.apply.outputs.upstreamed_count }}
+          HAS_CONFLICTS:    ${{ steps.apply.outputs.has_conflicts }}
+          PR_URL:           ${{ env.pr_url || '' }}
+          RUN_URL:          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS:       ${{ job.status }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${WEBHOOK_URL:-}" ]]; then
+            echo "GOOGLE_CHAT_WEBHOOK_URL not set – skipping notification"
+            exit 0
+          fi
+
+          if [[ "$JOB_STATUS" == "success" ]]; then
+            ICON=$([[ "$HAS_CONFLICTS" == "true" ]] && echo "⚠️" || echo "✅")
+            STATUS_TEXT=$([[ "$HAS_CONFLICTS" == "true" ]] && echo "Done with conflicts" || echo "Done cleanly")
+          else
+            ICON="❌"; STATUS_TEXT="Workflow failed"
+          fi
+
+          BODY="$(printf "%s *%s* → ionos-dev-v%s\n• Applied: %s  |  Dropped: %s  |  Conflicts: %s\n• %s" \
+            "$ICON" "$NEW_VERSION" "${{ inputs.new_major }}" \
+            "${CLEAN_COUNT:-?}" "${UPSTREAMED_COUNT:-?}" "${CONFLICT_COUNT:-?}" \
+            "${PR_URL:-$RUN_URL}")"
+
+          PAYLOAD=$(jq -n \
+            --arg title "Fork update: $STATUS_TEXT" \
+            --arg body  "$BODY" \
+            --arg link  "${PR_URL:-$RUN_URL}" \
+            '{
+              "cards": [{
+                "header": { "title": $title, "subtitle": "ncw-server IONOS fork" },
+                "sections": [{
+                  "widgets": [
+                    { "textParagraph": { "text": $body } },
+                    { "buttons": [{ "textButton": { "text": "Open PR / Run", "onClick": { "openLink": { "url": $link } } } }] }
+                  ]
+                }]
+              }]
+            }')
+
+          curl -s -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$WEBHOOK_URL"
