@@ -30,7 +30,7 @@ const pages: PageCase[] = [
 	{ name: 'login', path: '/login', ready: 'form[name="login"], #body-login form', auth: false },
 	{ name: 'files', path: '/apps/files/', ready: '[data-cy-files-list], .files-list, #app-content-vue', auth: true },
 	{ name: 'personal-settings', path: '/settings/user', ready: '#app-content, #content-vue, main', auth: true },
-	{ name: 'admin-overview', path: '/settings/admin/overview', ready: '#app-content, #content-vue, main', auth: true },
+	{ name: 'admin-settings', path: '/settings/admin', ready: '#app-content, #content-vue, main', auth: true },
 ]
 
 /**
@@ -58,8 +58,8 @@ for (const scheme of ['light', 'dark'] as const) {
 				const status = response?.status() ?? 0
 				if (status >= 400) {
 					await context?.close()
-					// e.g. the admin overview for an account without admin rights: not an a11y finding
-					test.skip(status === 403, `${pageCase.path} returned HTTP 403: this account has no access (use an admin account via A11Y_USER)`)
+					// e.g. an admin page for an account without access: not an a11y finding
+					test.skip(status === 403, `${pageCase.path} returned HTTP 403: Nextcloud found no admin settings this account may see here (not an admin, or the section is not available)`)
 					throw new Error(`${pageCase.path} returned HTTP ${status}`)
 				}
 
