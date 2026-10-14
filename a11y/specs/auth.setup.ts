@@ -6,7 +6,7 @@ import { test as setup, expect } from '@playwright/test'
 import { getPathPrefix } from '../helpers/instance'
 
 const user = process.env.A11Y_USER ?? 'admin'
-const password = process.env.A11Y_PASSWORD ?? 'admin123'
+const password = process.env.A11Y_PASSWORD ?? 'admin'
 
 // Log in once and re-use the session in the `pages` project
 setup('log in', async ({ page }) => {

@@ -25,7 +25,7 @@ A11Y_REPORT_ONLY=1 npm test   # never fail, only report
 npm run report            # open the HTML report
 npm run summary           # a11y-results/SUMMARY.md
 ```
-Env: `BASE_URL`, `A11Y_USER` / `A11Y_PASSWORD` (default `admin` / `admin123`), `A11Y_REPORT_ONLY=1`, `A11Y_LABEL`,
+Env: `BASE_URL`, `A11Y_USER` / `A11Y_PASSWORD` (see nc-d-n-t repo), `A11Y_REPORT_ONLY=1`, `A11Y_LABEL`,
 `A11Y_PATH_PREFIX`, `A11Y_SCOPE`.
 
 ### Scope of the page scans

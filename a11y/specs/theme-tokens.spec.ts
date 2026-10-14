@@ -169,6 +169,9 @@ for (const scheme of schemes) {
 				}))
 				await page.goto('/__a11y-harness')
 
+				// npx playwright test --project=theme-tokens --headed --workers=1 -g "ionos buttons"
+				// await page.pause()
+
 				// Guard against vacuous passes: an undefined var() silently falls back to inherited colours.
 				// (e.g. when the theme CSS is stale, see README "theme cache")
 				for (const token of [pair.fg, pair.bg]) {
