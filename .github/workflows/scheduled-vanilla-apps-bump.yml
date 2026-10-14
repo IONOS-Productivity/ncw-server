@@ -71,10 +71,11 @@ jobs:
 
       - name: Scan and apply mechanical bumps
         id: bump
+        working-directory: ncw-server
         run: |
           set -o pipefail
           ../nc-docs-and-tools/tools/bump-vanilla-apps.sh \
-            ncw-server \
+            . \
             /tmp/vanilla-scan.md \
             /tmp/vanilla-summary.sh | tee /tmp/bump-log.txt
           source /tmp/vanilla-summary.sh

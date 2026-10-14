@@ -84,10 +84,11 @@ jobs:
 
       - name: Scan and attempt mechanical bumps
         id: bump
+        working-directory: ncw-server
         run: |
           set -o pipefail
           ../nc-docs-and-tools/tools/bump-fork-apps.sh \
-            ncw-server \
+            . \
             /tmp/fork-scratch \
             /tmp/fork-scan.md \
             /tmp/fork-summary.sh | tee /tmp/fork-bump-log.txt
