@@ -22,6 +22,8 @@ on:
   schedule:
     - cron: '0 6 * * 1' # weekly, Monday 06:00 UTC
   workflow_dispatch: {}
+  push:
+    branches: ['test/scheduled-upgrade-automation'] # TEMPORARY trial trigger, never merge
 
 permissions:
   contents: read
@@ -44,6 +46,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
           repository: IONOS-Productivity/nc-docs-and-tools
+          ref: as/dev/scheduled-upgrade-automation # TEMPORARY
           path: nc-docs-and-tools
 
       - name: Add upstream remote

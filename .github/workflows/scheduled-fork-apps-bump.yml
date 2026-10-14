@@ -26,6 +26,8 @@ on:
   schedule:
     - cron: '0 7 * * 1' # weekly, Monday 07:00 UTC (offset from the vanilla-apps sweep)
   workflow_dispatch: {}
+  push:
+    branches: ['test/scheduled-upgrade-automation'] # TEMPORARY trial trigger, never merge
 
 permissions:
   contents: read
@@ -43,8 +45,8 @@ jobs:
     env:
       # Optional trial-run controls (repo variables). ONLY_APPS e.g. "activity"; DRY_RUN "1"
       # scans and checks cherry-picks but pushes nothing and opens no PRs.
-      ONLY_APPS: ${{ vars.UPGRADE_ONLY_APPS }}
-      DRY_RUN: ${{ vars.UPGRADE_DRY_RUN }}
+      ONLY_APPS: activity # TEMPORARY
+      DRY_RUN: '1' # TEMPORARY
     steps:
       - name: Checkout ncw-server (default integration branch)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
@@ -58,6 +60,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
           repository: IONOS-Productivity/nc-docs-and-tools
+          ref: as/dev/scheduled-upgrade-automation # TEMPORARY
           path: nc-docs-and-tools
           token: ${{ secrets.UPGRADE_BOT_PAT }}
 
