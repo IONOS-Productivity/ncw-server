@@ -98,6 +98,23 @@ jobs:
         # bump-fork-apps.sh propagates the scan's own exit 1 on network/rate-limit/not-initialised
         # error — intentionally not caught here.
 
+      - name: Define PR base-branch helper
+        run: |
+          # Base for fork PRs: ionos-dev-v<NC target> if the fork has it, else the highest
+          # ionos-dev-v<N> branch, else the fork's default branch.
+          cat > /tmp/fork-base.sh <<'EOS'
+          fork_base_branch() {
+            local dir=$1 want="ionos-dev-v${NC_TARGET}" branches pick
+            branches=$(git -C "$dir" ls-remote --heads origin 'ionos-dev-v*' | sed 's#.*refs/heads/##' | grep -E '^ionos-dev-v[0-9]+$' || true)
+            if grep -qx "$want" <<<"$branches"; then pick=$want
+            else pick=$(sort -V <<<"$branches" | tail -1); fi
+            if [[ -z "$pick" ]]; then
+              pick=$(git -C "$dir" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#origin/##' || echo main)
+            fi
+            echo "$pick"
+          }
+          EOS
+
       # --- mirror-bump path: PR in each fork's own repo ---
 
       - name: Open PR for each mirror bump
@@ -106,6 +123,8 @@ jobs:
           GH_TOKEN: ${{ secrets.UPGRADE_BOT_PAT }}
         run: |
           source /tmp/fork-summary.sh
+          source /tmp/fork-base.sh
+          NC_TARGET=${{ steps.resolve.outputs.nc_target }}
           for entry in $MIRROR_READY; do
             app=${entry%%:*}; rest=${entry#*:}; working_branch=${rest%%:*}; sha=${rest#*:}
             clone_dir="/tmp/fork-scratch/$app"
@@ -130,7 +149,7 @@ jobs:
             } > "/tmp/pr-body-$app.md"
             gh pr create \
               --repo "$fork_repo" \
-              --base "$(git -C "$clone_dir" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#origin/##' || echo main)" \
+              --base "$(fork_base_branch "$clone_dir")" \
               --head "$working_branch" \
               --title "IONOS($app): fast-forward to NC${{ steps.resolve.outputs.nc_target }}-compatible upstream tag (scheduled)" \
               --body-file "/tmp/pr-body-$app.md"
@@ -144,6 +163,8 @@ jobs:
           GH_TOKEN: ${{ secrets.UPGRADE_BOT_PAT }}
         run: |
           source /tmp/fork-summary.sh
+          source /tmp/fork-base.sh
+          NC_TARGET=${{ steps.resolve.outputs.nc_target }}
           for entry in $REBASE_READY; do
             app=${entry%%:*}; rest=${entry#*:}; tag=${rest%%:*}; sha=${rest#*:}
             clone_dir="/tmp/fork-scratch/$app"
@@ -152,7 +173,7 @@ jobs:
             {
               echo "## Summary"
               echo
-              echo "Rebases this fork's IONOS delta onto the new upstream tag ($tag's base),"
+              echo "Rebases this fork's IONOS delta onto the new upstream tag \`${tag%-*}\`,"
               echo "cherry-picked clean (\`git cherry-pick -x\`, zero conflicts — see commit list"
               echo "below for provenance). Opened automatically by \`scheduled-fork-apps-bump.yml\`."
               echo
@@ -171,9 +192,9 @@ jobs:
             } > "/tmp/pr-body-$app.md"
             gh pr create \
               --repo "$fork_repo" \
-              --base "$(git -C "$clone_dir" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#origin/##' || echo main)" \
+              --base "$(fork_base_branch "$clone_dir")" \
               --head "$working_branch" \
-              --title "IONOS($app): rebase onto $tag (scheduled)" \
+              --title "IONOS($app): rebase IONOS changes onto upstream ${tag%-*} (scheduled)" \
               --body-file "/tmp/pr-body-$app.md"
           done
 
