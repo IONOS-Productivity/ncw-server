@@ -124,8 +124,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
-          submodules: false  # No submodule checkout needed — SHAs are read from the git index
-          fetch-depth: 1
+          submodules: recursive
+          fetch-depth: 1  # Shallow clone - only need current submodule SHAs for cache detection
 
       - name: Determine PHP version from NC major version
         id: php-version
@@ -484,52 +484,31 @@ jobs:
 
           # Extract configuration values
           APP_PATH=$(echo "$APP_CONFIG" | jq -r '.path')
+          HAS_NPM=$(echo "$APP_CONFIG" | jq -r '.has_npm')
+          HAS_COMPOSER=$(echo "$APP_CONFIG" | jq -r '.has_composer')
           MAKEFILE_TARGET=$(echo "$APP_CONFIG" | jq -r '.makefile_target')
 
-          # Set outputs — has-npm and has-composer are detected from disk after checkout
+          # Set outputs
           echo "path=$APP_PATH" >> $GITHUB_OUTPUT
+          echo "has-npm=$HAS_NPM" >> $GITHUB_OUTPUT
+          echo "has-composer=$HAS_COMPOSER" >> $GITHUB_OUTPUT
           echo "makefile-target=$MAKEFILE_TARGET" >> $GITHUB_OUTPUT
           echo "Building $APP_NAME from $APP_PATH (SHA: ${APP_SHA})"
 
       - name: Checkout server
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
-          submodules: false  # Submodules are fetched selectively below
+          submodules: recursive
           fetch-depth: 1
 
-      - name: Checkout IONOS and app submodule
-        env:
-          APP_PATH: ${{ steps.app-config.outputs.path }}
-        run: |
-          # IONOS is always needed for the Makefile targets
-          git submodule update --init IONOS
-          # Recursive covers apps that have their own submodules (e.g. eurooffice, collectives)
-          git submodule update --init --recursive "$APP_PATH"
-
-      - name: Detect npm and composer from checked-out app
-        id: detect-build-tools
-        env:
-          APP_PATH: ${{ steps.app-config.outputs.path }}
-        run: |
-          if [ -f "$APP_PATH/package.json" ]; then
-            echo "has-npm=true" >> $GITHUB_OUTPUT
-          else
-            echo "has-npm=false" >> $GITHUB_OUTPUT
-          fi
-          if [ -f "$APP_PATH/composer.json" ]; then
-            echo "has-composer=true" >> $GITHUB_OUTPUT
-          else
-            echo "has-composer=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Set up node with version from package.json's engines
-        if: steps.detect-build-tools.outputs.has-npm == 'true'
+        if: steps.app-config.outputs.has-npm == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # 6.4.0
         with:
           node-version-file: "package.json"
 
       - name: Detect npm lockfile
-        if: steps.detect-build-tools.outputs.has-npm == 'true'
+        if: steps.app-config.outputs.has-npm == 'true'
         id: npm-lockfile
         env:
           APP_PATH: ${{ steps.app-config.outputs.path }}
@@ -544,7 +523,7 @@ jobs:
           fi
 
       - name: Cache npm dependencies for ${{ matrix.app_info.name }}
-        if: steps.detect-build-tools.outputs.has-npm == 'true' && steps.npm-lockfile.outputs.path != '' && github.event.inputs.force_rebuild != 'true'
+        if: steps.app-config.outputs.has-npm == 'true' && steps.npm-lockfile.outputs.path != '' && github.event.inputs.force_rebuild != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # 6.1.0
         with:
           path: ~/.npm
@@ -553,7 +532,7 @@ jobs:
             ${{ runner.os }}-npm-${{ matrix.app_info.name }}-
 
       - name: Setup PHP with PECL extension
-        if: steps.detect-build-tools.outputs.has-composer == 'true'
+        if: steps.app-config.outputs.has-composer == 'true'
         uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231 #v2.31.1
         with:
           php-version: ${{ needs.prepare-matrix.outputs.php_version }}
@@ -563,7 +542,7 @@ jobs:
           runner: ubuntu-latest
 
       - name: Cache Composer dependencies for ${{ matrix.app_info.name }}
-        if: steps.detect-build-tools.outputs.has-composer == 'true' && github.event.inputs.force_rebuild != 'true'
+        if: steps.app-config.outputs.has-composer == 'true' && github.event.inputs.force_rebuild != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # 6.1.0
         with:
           path: ${{ steps.app-config.outputs.path }}/vendor
@@ -747,11 +726,8 @@ jobs:
       - name: Checkout server
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
-          submodules: false  # App submodules are restored from JFrog/cache; only IONOS is needed
+          submodules: recursive
           fetch-depth: 1
-
-      - name: Checkout IONOS submodule
-        run: git submodule update --init IONOS
 
       - name: Setup JFrog CLI
         uses: jfrog/setup-jfrog-cli@1641575d87647fb969c0545f0b6a76873e328b7c # v5.0.0
