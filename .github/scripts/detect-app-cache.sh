@@ -132,20 +132,14 @@ while IFS= read -r app_json; do
 
   APPS_CHECKED=$((APPS_CHECKED + 1))
 
-  # Get current submodule SHA
-  if [ -d "$APP_PATH" ]; then
-    CURRENT_SHA=$(git -C "$APP_PATH" rev-parse HEAD 2>/dev/null || echo "")
-  else
-    echo "⊘ $APP_NAME - directory not found, will build"
-    echo "| $APP_NAME | N/A | N/A | ⊘ Directory not found |" >> "$GITHUB_STEP_SUMMARY"
-    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "unknown" '. + [{name: $app, sha: $sha}]')
-    APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
-    continue
-  fi
+  # Get current submodule SHA from the parent repo's git index — no submodule
+  # checkout required. git ls-tree HEAD <path> prints a gitlink entry (mode 160000)
+  # whose third field is the pinned commit SHA when the path is a registered submodule.
+  CURRENT_SHA=$(git ls-tree HEAD "$APP_PATH" 2>/dev/null | awk '/^160000 commit / {print $3}')
 
   if [ -z "$CURRENT_SHA" ]; then
-    echo "⊘ $APP_NAME - not a git repo, will build"
-    echo "| $APP_NAME | N/A | N/A | ⊘ Not a git repo |" >> "$GITHUB_STEP_SUMMARY"
+    echo "⊘ $APP_NAME - not a registered submodule in HEAD tree, will build"
+    echo "| $APP_NAME | N/A | N/A | ⊘ Not a registered submodule |" >> "$GITHUB_STEP_SUMMARY"
     APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "unknown" '. + [{name: $app, sha: $sha}]')
     APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
     continue
