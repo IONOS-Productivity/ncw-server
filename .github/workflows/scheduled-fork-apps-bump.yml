@@ -46,7 +46,7 @@ jobs:
       # Optional trial-run controls (repo variables). ONLY_APPS e.g. "activity"; DRY_RUN "1"
       # scans and checks cherry-picks but pushes nothing and opens no PRs.
       ONLY_APPS: activity # TEMPORARY
-      DRY_RUN: '1' # TEMPORARY
+      DRY_RUN: '0' # TEMPORARY real write test, activity only
     steps:
       - name: Checkout ncw-server (default integration branch)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
