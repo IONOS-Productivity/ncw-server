@@ -35,6 +35,14 @@ and today they are upstream Nextcloud findings (e.g. the hidden upload `<input>`
 `A11Y_SCOPE=full` runs all WCAG 2.0/2.1 A+AA rules; combine it with the baseline diff below.
 The Files interaction tests use language-independent selectors, so they also work in a German UI.
 
+### Talk conversation (contrast of message bubbles)
+`pages.spec.ts` can scan a Talk conversation with history. The conversation token is specific to your instance
+(the last part of `/call/<token>`), so pass it in: `A11Y_TALK_TOKEN=<token> npm run test:pages`. Without it the test is skipped.
+Use a conversation with messages from you and from another account, because own messages are styled differently.
+The token tests also cover the Talk bubble colours (`talk messages` group). In dark mode, own messages currently fail:
+Talk draws them on `--color-primary-light` with text `--color-text-light`, and our theme gives those tokens
+`#e5ebf3` and `#f4f7fa` (1.11:1).
+
 ### Watch the browser
 ```bash
 npx playwright test --project=pages --headed   # visible Chromium

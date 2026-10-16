@@ -44,6 +44,13 @@ const pairs: Pair[] = [
 	{ group: 'core primary', fg: '--color-primary-element-light-text', bg: '--color-primary-element-light' },
 	{ group: 'core primary', fg: '--color-primary-element-light-text', bg: '--color-primary-element-light-hover' },
 
+	// --- Talk message bubbles (spreed MessageItem.vue / MessageBody.vue, v23):
+	// own ("outgoing") messages are painted with --color-primary-light and their text with --color-text-light,
+	// time and status with --color-text-maxcontrast; pinned/highlighted messages use --color-primary-element-light.
+	{ group: 'talk messages', fg: '--color-text-light', bg: '--color-primary-light' },
+	{ group: 'talk messages', fg: '--color-text-maxcontrast', bg: '--color-primary-light' },
+	{ group: 'talk messages', fg: '--color-text-light', bg: '--color-primary-element-light' },
+
 	// --- Feedback colours: recommended v33 text tokens
 	{ group: 'feedback (v33 tokens)', fg: '--color-text-error', bg: '--color-main-background' },
 	{ group: 'feedback (v33 tokens)', fg: '--color-text-success', bg: '--color-main-background' },

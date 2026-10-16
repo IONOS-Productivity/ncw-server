@@ -118,3 +118,35 @@ for (const scheme of ['light', 'dark'] as const) {
 		})
 	})
 }
+
+/**
+ * Talk conversation with history, e.g. http://localhost:8080/index.php/call/<token>.
+ * The token of a conversation is specific to your instance, so it is not hard-coded:
+ *   A11Y_TALK_TOKEN=<token> npx playwright test --project=pages -g talk
+ * Use a conversation with messages from you and from another account (own messages are styled differently).
+ * The viewport is made tall so the whole history is on screen (axe only checks what it can reach).
+ */
+const talkToken = process.env.A11Y_TALK_TOKEN
+
+for (const scheme of ['light', 'dark'] as const) {
+	test.describe(`IONOS theme Talk - ${scheme} mode`, () => {
+		test.use({ colorScheme: scheme, viewport: { width: 1280, height: 1800 } })
+
+		test('talk conversation has no a11y violations', async ({ page }, testInfo) => {
+			test.skip(!talkToken, 'Set A11Y_TALK_TOKEN to the token of a conversation with messages (the last part of /call/<token>)')
+
+			const prefix = await getPathPrefix()
+			const response = await test.step('open conversation', () => page.goto(`${prefix}/call/${talkToken}`))
+			expect(response?.status(), `/call/${talkToken} must be reachable for this account`).toBeLessThan(400)
+
+			await test.step('wait until messages are rendered', async () => {
+				await expect(page.locator('li.message .message-body').first()).toBeVisible({ timeout: 30_000 })
+				await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
+				await dismissOverlays(page)
+			})
+
+			await testInfo.attach(`talk-${scheme}.png`, { body: await page.screenshot(), contentType: 'image/png' })
+			await test.step('axe scan', () => expectNoA11yViolations(page, testInfo, `page-${scheme}-talk-conversation`))
+		})
+	})
+}
