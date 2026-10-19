@@ -1,0 +1,195 @@
+name: Cleanup PR Artifacts
+
+# SPDX-FileCopyrightText: 2026 STRATO AG
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+env:
+  ARTIFACTORY_REPOSITORY_SNAPSHOT: ionos-productivity-ncwserver-snapshot
+
+jobs:
+  cleanup-pr-artifacts:
+    runs-on: self-hosted
+    # Only run if PR was merged
+    if: github.event.pull_request.merged == true
+
+    name: Delete PR artifacts from JFrog
+
+    steps:
+      - name: Check prerequisites
+        run: |
+          error_count=0
+
+          if [ -z "${{ secrets.JF_ARTIFACTORY_URL }}" ]; then
+            echo "::error::JF_ARTIFACTORY_URL secret is not set"
+            error_count=$((error_count + 1))
+          fi
+
+          if [ -z "${{ secrets.JF_ARTIFACTORY_USER }}" ]; then
+            echo "::error::JF_ARTIFACTORY_USER secret is not set"
+            error_count=$((error_count + 1))
+          fi
+
+          if [ -z "${{ secrets.JF_ACCESS_TOKEN }}" ]; then
+            echo "::error::JF_ACCESS_TOKEN secret is not set"
+            error_count=$((error_count + 1))
+          fi
+
+          if [ $error_count -ne 0 ]; then
+            echo "::error::Required secrets are not set. Aborting."
+            exit 1
+          fi
+
+          echo "✅ All required secrets are set"
+
+      - name: Setup JFrog CLI
+        uses: jfrog/setup-jfrog-cli@7c95feb32008765e1b4e626b078dfd897c4340ad # v4.4.1
+        env:
+          JF_URL: ${{ secrets.JF_ARTIFACTORY_URL }}
+          JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+
+      - name: Verify JFrog connection
+        run: jf rt ping
+
+      - name: Delete PR artifact package
+        id: delete_pr_package
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
+          ARTIFACT_PATH="${REPO}/dev/pr/nextcloud-workspace-pr-${PR_NUMBER}.zip"
+
+          echo "🔍 Looking up: ${ARTIFACT_PATH}"
+
+          # Search first so we can distinguish "not found" from "found and deleted"
+          # from "found but delete failed". jf rt delete by itself exits 0 in all
+          # three cases, which makes accurate reporting impossible.
+          FOUND=$(jf rt search "${ARTIFACT_PATH}" | jq '.results | length')
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "ℹ️  No PR package artifact found (nothing to clean up)"
+            echo "status=not_found" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "🗑️  Deleting PR artifact package..."
+          if jf rt delete "${ARTIFACT_PATH}" --quiet; then
+            echo "✅ Deleted PR package artifact"
+            echo "status=deleted" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Failed to delete ${ARTIFACT_PATH}"
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Delete PR app artifacts
+        id: delete_app_artifacts
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO="${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}"
+
+          # For pull_request events, github.ref_name is "<pr_number>/merge".
+          # build-external-apps uploads each app archive with vcs.branch set to
+          # github.ref_name (see build-artifact.yml), so PR-uploaded app archives
+          # are uniquely identifiable by exact match on vcs.branch.
+          VCS_BRANCH="${PR_NUMBER}/merge"
+
+          echo "🔍 Searching for app artifacts with vcs.branch=${VCS_BRANCH}"
+
+          # Property-based search — simpler and more direct than raw AQL via --spec.
+          # jf rt search returns {"results": [{"path": "<repo>/<dir>/<file>", ...}]}
+          SEARCH_OUTPUT=$(jf rt search --props "vcs.branch=${VCS_BRANCH}" "${REPO}/apps/*")
+          ARTIFACTS=$(echo "$SEARCH_OUTPUT" | jq -r '.results[].path')
+
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ℹ️  No app artifacts found for this PR"
+            echo "found=0" >> "$GITHUB_OUTPUT"
+            echo "deleted=0" >> "$GITHUB_OUTPUT"
+            echo "failed=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FOUND_COUNT=$(echo "$ARTIFACTS" | wc -l)
+          echo "Found ${FOUND_COUNT} app artifact(s):"
+          while IFS= read -r artifact; do
+            echo "  - $artifact"
+          done <<< "$ARTIFACTS"
+          echo ""
+
+          # Use a here-string (<<<) instead of `echo | while` so the counters
+          # are not lost in a subshell.
+          DELETED_COUNT=0
+          FAILED_COUNT=0
+          while IFS= read -r artifact; do
+            [ -z "$artifact" ] && continue
+            if jf rt delete "$artifact" --quiet; then
+              echo "  ✅ Deleted: $artifact"
+              DELETED_COUNT=$((DELETED_COUNT + 1))
+            else
+              echo "  ❌ Failed:  $artifact"
+              FAILED_COUNT=$((FAILED_COUNT + 1))
+            fi
+          done <<< "$ARTIFACTS"
+
+          echo ""
+          echo "found=${FOUND_COUNT}" >> "$GITHUB_OUTPUT"
+          echo "deleted=${DELETED_COUNT}" >> "$GITHUB_OUTPUT"
+          echo "failed=${FAILED_COUNT}" >> "$GITHUB_OUTPUT"
+
+          if [ "$FAILED_COUNT" -gt 0 ]; then
+            echo "::error::Failed to delete ${FAILED_COUNT} of ${FOUND_COUNT} app artifact(s)"
+            exit 1
+          fi
+
+          echo "✅ Deleted all ${DELETED_COUNT} app artifact(s)"
+
+      - name: Summary
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PKG_STATUS="${{ steps.delete_pr_package.outputs.status }}"
+          APPS_FOUND="${{ steps.delete_app_artifacts.outputs.found }}"
+          APPS_DELETED="${{ steps.delete_app_artifacts.outputs.deleted }}"
+          APPS_FAILED="${{ steps.delete_app_artifacts.outputs.failed }}"
+
+          # Render package status
+          case "$PKG_STATUS" in
+            deleted)   PKG_LINE="✅ Main artifact: deleted" ;;
+            not_found) PKG_LINE="ℹ️  Main artifact: not found (nothing to clean up)" ;;
+            failed)    PKG_LINE="❌ Main artifact: delete failed" ;;
+            *)         PKG_LINE="❓ Main artifact: unknown status" ;;
+          esac
+
+          # Render app artifacts status
+          if [ -z "$APPS_FOUND" ] || [ "$APPS_FOUND" = "0" ]; then
+            APPS_LINE="ℹ️  App artifacts: none found"
+          elif [ "$APPS_FAILED" = "0" ]; then
+            APPS_LINE="✅ App artifacts: deleted ${APPS_DELETED}/${APPS_FOUND}"
+          else
+            APPS_LINE="❌ App artifacts: deleted ${APPS_DELETED}/${APPS_FOUND}, failed ${APPS_FAILED}"
+          fi
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🧹 PR #${PR_NUMBER} Artifact Cleanup Summary"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "$PKG_LINE"
+          echo "$APPS_LINE"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          {
+            echo "## 🧹 PR #${PR_NUMBER} Artifact Cleanup"
+            echo ""
+            echo "- $PKG_LINE"
+            echo "- $APPS_LINE"
+          } >> "$GITHUB_STEP_SUMMARY"
