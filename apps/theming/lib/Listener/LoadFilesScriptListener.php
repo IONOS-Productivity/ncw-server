@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\Theming\Listener;
 
 use OCA\Files\Event\LoadAdditionalScriptsEvent;
+use OCA\Theming\Service\ThemesService;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Util;
@@ -16,12 +17,20 @@ use OCP\Util;
 /** @template-implements IEventListener<LoadAdditionalScriptsEvent> */
 class LoadFilesScriptListener implements IEventListener {
 
+	public function __construct(
+		private ThemesService $themesService,
+	) {
+	}
+
 	public function handle(Event $event): void {
 		if (!($event instanceof LoadAdditionalScriptsEvent)) {
 			return;
 		}
 
 		// IONOS-specific runtime fixes and enhancements, scoped to the Files app only
-		Util::addScript('theming', 'ionos');
+		// and only needed while the IONOS theme is enabled for the current user
+		if (in_array('ionos', $this->themesService->getEnabledThemes(), true)) {
+			Util::addScript('theming', 'ionos');
+		}
 	}
 }
