@@ -248,6 +248,13 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--color-primary' => $colorPrimary,
 			'--color-primary-element' => $colorPrimary,
 			'--color-primary-element-light' => 'light-dark( #e5ebf3, var(--ion-color-blue-b5))',
+			// The non-"element" primary-light family (own Talk messages, hover/selected backgrounds) must follow dark mode
+			// like --color-primary-element-light above: otherwise light text ends up on a light background (1.1:1).
+			// The "-text" and "-hover" tokens are the ones the deprecated --color-primary-element-light-* aliases point to.
+			// Light values are the ones generatePrimaryVariables() produces, so light mode does not change.
+			'--color-primary-light' => 'light-dark( #e5ebf3, var(--ion-color-blue-b5))',
+			'--color-primary-light-hover' => 'light-dark( #d9dfe6, var(--ion-color-blue-b6))',
+			'--color-primary-light-text' => 'light-dark( #001839, var(--color-main-text))',
 
 			// to use like this: background-image: linear-gradient(0, var('--gradient-main-background));
 			'--gradient-main-background' => 'var(--color-main-background) 0%, var(--color-main-background-translucent) 85%, transparent 100%',

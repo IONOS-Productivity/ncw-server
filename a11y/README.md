@@ -39,9 +39,9 @@ The Files interaction tests use language-independent selectors, so they also wor
 `pages.spec.ts` can scan a Talk conversation with history. The conversation token is specific to your instance
 (the last part of `/call/<token>`), so pass it in: `A11Y_TALK_TOKEN=<token> npm run test:pages`. Without it the test is skipped.
 Use a conversation with messages from you and from another account, because own messages are styled differently.
-The token tests also cover the Talk bubble colours (`talk messages` group). In dark mode, own messages currently fail:
-Talk draws them on `--color-primary-light` with text `--color-text-light`, and our theme gives those tokens
-`#e5ebf3` and `#f4f7fa` (1.11:1).
+The token tests also cover the Talk bubble colours (`talk messages` group). Talk draws own messages on
+`--color-primary-light` (text `--color-text-light`, hover `--color-primary-light-hover`); these tokens had no dark-mode
+value in the IONOS theme (contrast 1.1:1). `IonosTheme.php` now defines the whole `primary-light` family with `light-dark()`.
 
 ### Watch the browser
 ```bash

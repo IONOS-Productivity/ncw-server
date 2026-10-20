@@ -41,6 +41,7 @@ const pairs: Pair[] = [
 	{ group: 'core primary', fg: '--color-primary-element-text', bg: '--color-primary-element' },
 	{ group: 'core primary', fg: '--color-primary-element-text', bg: '--color-primary-element-hover' },
 	{ group: 'core primary', fg: '--color-primary-light-text', bg: '--color-primary-light' },
+	{ group: 'core primary', fg: '--color-primary-light-text', bg: '--color-primary-light-hover' },
 	{ group: 'core primary', fg: '--color-primary-element-light-text', bg: '--color-primary-element-light' },
 	{ group: 'core primary', fg: '--color-primary-element-light-text', bg: '--color-primary-element-light-hover' },
 
@@ -50,6 +51,8 @@ const pairs: Pair[] = [
 	{ group: 'talk messages', fg: '--color-text-light', bg: '--color-primary-light' },
 	{ group: 'talk messages', fg: '--color-text-maxcontrast', bg: '--color-primary-light' },
 	{ group: 'talk messages', fg: '--color-text-light', bg: '--color-primary-element-light' },
+	// hovering an own message paints it with --color-primary-light-hover (--message-body-hover)
+	{ group: 'talk messages', fg: '--color-text-light', bg: '--color-primary-light-hover' },
 
 	// --- Feedback colours: recommended v33 text tokens
 	{ group: 'feedback (v33 tokens)', fg: '--color-text-error', bg: '--color-main-background' },
