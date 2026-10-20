@@ -8,6 +8,23 @@ div.app-talk.content {
 		color: var(--ion-text);
 	}
 
+	li.message.outgoing .message-body {
+		--ion-bubble-text: light-dark(var(--ion-color-cool-grey-c7), var(--color-primary-light-text));
+		--color-main-text: var(--ion-bubble-text);
+		--color-text-light: var(--ion-bubble-text);
+		--color-text-maxcontrast: var(--ion-bubble-text);
+		color: var(--ion-bubble-text);
+	}
+
+	/* Mention chips in outgoing messages: dark text on the light bubble, normal text on the chip's own dark background */
+	li.message.outgoing .message-body .nc-chip {
+		--ion-chip-text-normal: light-dark(var(--ion-color-cool-grey-c7), var(--ion-color-cool-grey-c1));
+		--color-main-text: var(--ion-chip-text-normal);
+		--color-text-light: var(--ion-chip-text-normal);
+		--color-text-maxcontrast: var(--ion-chip-text-normal);
+		color: var(--ion-chip-text-normal);
+	}
+
 	.left-sidebar__settings-button-container {
 		button {
 			background-color: var(--ion-button-sidebar-background) !important;
@@ -40,4 +57,24 @@ div.app-talk.content {
 			}
 		}
 	}
+}
+
+/*
+ * "New conversation" dialog (a modal rendered outside .app-talk, hence a top-level rule) and the breakout rooms editor.
+ * Selected participants are drawn on --color-primary-light, which stays light in dark mode, but their name, subname and
+ * check icon take the normal text colour, which turns light in dark mode (1.1:1). Keep the light bar and use dark text on
+ * it in dark mode. Light mode values are unchanged.
+ */
+.selectable-participant:has(input:checked) {
+	--ion-selected-text: light-dark(var(--ion-color-cool-grey-c7), var(--color-primary-light-text));
+	--color-text-maxcontrast: var(--ion-selected-text);
+	color: var(--ion-selected-text);
+}
+
+/*
+ * The federated-user badge (globe) on an avatar sits on a circle painted with --color-main-background, which stays dark in
+ * dark mode. Its icon uses currentColor, so it would inherit the dark row text above (1.07:1): keep the normal text colour.
+ */
+.selectable-participant:has(input:checked) .avatar-wrapper__user-status {
+	color: var(--color-main-text);
 }
