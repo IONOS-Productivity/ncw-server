@@ -8,6 +8,29 @@ div.app-talk.content {
 		color: var(--ion-text);
 	}
 
+	/*
+	 * Own messages are drawn on --color-primary-light, which stays light in dark mode, but their content takes the
+	 * normal text colour, which turns light in dark mode (1.1:1 contrast): the message text (--color-text-light),
+	 * the time and status (--color-text-maxcontrast), links (--color-main-text) and link preview cards (inherited color).
+	 * Keep the light bubble and use dark text on it in dark mode. Light mode values are unchanged.
+	 */
+	li.message.outgoing .message-body {
+		--ion-bubble-text: light-dark(var(--ion-color-cool-grey-c7), var(--color-primary-light-text));
+		--color-main-text: var(--ion-bubble-text);
+		--color-text-light: var(--ion-bubble-text);
+		--color-text-maxcontrast: var(--ion-bubble-text);
+		color: var(--ion-bubble-text);
+
+		/* Chips (mentions) keep their own dark background in dark mode, so they keep the normal text colour */
+		.nc-chip {
+			--ion-chip-text-normal: light-dark(var(--ion-color-cool-grey-c7), var(--ion-color-cool-grey-c1));
+			--color-main-text: var(--ion-chip-text-normal);
+			--color-text-light: var(--ion-chip-text-normal);
+			--color-text-maxcontrast: var(--ion-chip-text-normal);
+			color: var(--ion-chip-text-normal);
+		}
+	}
+
 	.left-sidebar__settings-button-container {
 		button {
 			background-color: var(--ion-button-sidebar-background) !important;

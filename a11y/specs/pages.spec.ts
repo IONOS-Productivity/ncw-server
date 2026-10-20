@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { test, expect, type Page } from '@playwright/test'
-import { expectNoA11yViolations } from '../helpers/axe'
+import { expectNoA11yViolations, expectReadable } from '../helpers/axe'
 import { dismissOverlays, getPathPrefix } from '../helpers/instance'
 
 /**
@@ -128,25 +128,49 @@ for (const scheme of ['light', 'dark'] as const) {
  */
 const talkToken = process.env.A11Y_TALK_TOKEN
 
-for (const scheme of ['light', 'dark'] as const) {
-	test.describe(`IONOS theme Talk - ${scheme} mode`, () => {
-		test.use({ colorScheme: scheme, viewport: { width: 1280, height: 1800 } })
+// Talk shows a conversation only once per login session ("Duplicate session ... opened in another tab"), and every
+// test here reuses the same stored session. So the light and dark test must not run in parallel: serial mode.
+test.describe('IONOS theme Talk', () => {
+	test.describe.configure({ mode: 'serial' })
 
-		test('talk conversation has no a11y violations', async ({ page }, testInfo) => {
-			test.skip(!talkToken, 'Set A11Y_TALK_TOKEN to the token of a conversation with messages (the last part of /call/<token>)')
+	for (const scheme of ['light', 'dark'] as const) {
+		test.describe(`${scheme} mode`, () => {
+			test.use({ colorScheme: scheme, viewport: { width: 1280, height: 1800 } })
 
-			const prefix = await getPathPrefix()
-			const response = await test.step('open conversation', () => page.goto(`${prefix}/call/${talkToken}`))
-			expect(response?.status(), `/call/${talkToken} must be reachable for this account`).toBeLessThan(400)
+			test('talk conversation has no a11y violations', async ({ page }, testInfo) => {
+				test.skip(!talkToken, 'Set A11Y_TALK_TOKEN to the token of a conversation with messages (the last part of /call/<token>)')
 
-			await test.step('wait until messages are rendered', async () => {
-				await expect(page.locator('li.message .message-body').first()).toBeVisible({ timeout: 30_000 })
-				await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
-				await dismissOverlays(page)
+				const prefix = await getPathPrefix()
+				const response = await test.step('open conversation', () => page.goto(`${prefix}/call/${talkToken}`))
+				expect(response?.status(), `/call/${talkToken} must be reachable for this account`).toBeLessThan(400)
+
+				await test.step('wait until messages are rendered', async () => {
+					try {
+						await expect(page.locator('li.message .message-body').first()).toBeVisible({ timeout: 30_000 })
+					} catch (error) {
+						const notes = await page.locator('[role="note"]').allInnerTexts()
+						throw new Error(
+							`Talk rendered no messages. Notices on the page: ${JSON.stringify(notes)}. `
+							+ 'A conversation can be open only once per login session ("Duplicate session"): close other tabs that use the session of this test.',
+							{ cause: error },
+						)
+					}
+					await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
+					await dismissOverlays(page)
+				})
+
+				await testInfo.attach(`talk-${scheme}.png`, { body: await page.screenshot(), contentType: 'image/png' })
+				await test.step('axe scan', () => expectNoA11yViolations(page, testInfo, `page-${scheme}-talk-conversation`))
+
+				// axe reports mention chips as "incomplete" (partly covered by their avatar), so it never judges them
+				await test.step('mention chips are readable', () => expectReadable(page, testInfo, `talk-${scheme}-chips`, 'li.message .nc-chip__text'))
+
+				// hovering an own message paints it with --color-primary-light-hover, a state the resting scan never shows
+				await test.step('axe scan, own message hovered', async () => {
+					await page.locator('li.message.outgoing .message-body').first().hover({ timeout: 15_000 })
+					await expectNoA11yViolations(page, testInfo, `page-${scheme}-talk-conversation-hover`)
+				})
 			})
-
-			await testInfo.attach(`talk-${scheme}.png`, { body: await page.screenshot(), contentType: 'image/png' })
-			await test.step('axe scan', () => expectNoA11yViolations(page, testInfo, `page-${scheme}-talk-conversation`))
 		})
-	})
-}
+	}
+})

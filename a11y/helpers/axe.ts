@@ -120,3 +120,78 @@ export async function expectNoA11yViolations(
  * (then `/login` becomes `/index.php/login`). Leave empty when `/login` works.
  */
 export const PATH_PREFIX = process.env.A11Y_PATH_PREFIX ?? ''
+
+/**
+ * Fallback contrast check for elements axe reports as "incomplete" (it cannot decide, e.g. a chip partly covered
+ * by its avatar: `elmPartiallyObscured`). A green axe result says nothing about those, so compute the WCAG ratio of
+ * the resolved text colour against the resolved background (composited over the ancestors) ourselves.
+ * Only plain colours are supported; an unknown colour format throws instead of passing silently.
+ */
+export async function expectReadable(
+	page: Page,
+	testInfo: TestInfo,
+	name: string,
+	selector: string,
+	minRatio = 4.5,
+) {
+	const results = await page.evaluate(({ selector, minRatio }) => {
+		const parse = (css: string): [number, number, number, number] => {
+			const match = css.match(/^rgba?\(([^)]+)\)$/)
+			if (!match) throw new Error(`unsupported colour format: ${css}`)
+			const [r, g, b, a = 1] = match[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+			return [r, g, b, a]
+		}
+		const luminance = ([r, g, b]: number[]) => {
+			const [R, G, B] = [r, g, b].map((v) => {
+				const c = v / 255
+				return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+			})
+			return 0.2126 * R + 0.7152 * G + 0.0722 * B
+		}
+		const background = (element: Element): [number, number, number] => {
+			const layers: [number, number, number, number][] = []
+			for (let node: Element | null = element; node; node = node.parentElement) {
+				const bg = parse(getComputedStyle(node).backgroundColor)
+				if (bg[3] > 0) layers.push(bg)
+				if (bg[3] === 1) break
+			}
+			let [r, g, b] = layers.length && layers[layers.length - 1][3] === 1 ? layers.pop()!.slice(0, 3) : [255, 255, 255]
+			for (const [lr, lg, lb, la] of layers.reverse()) {
+				r = lr * la + r * (1 - la)
+				g = lg * la + g * (1 - la)
+				b = lb * la + b * (1 - la)
+			}
+			return [r, g, b]
+		}
+
+		return [...document.querySelectorAll(selector)].map((element) => {
+			const fg = parse(getComputedStyle(element).color)
+			const bg = background(element)
+			const [hi, lo] = [luminance(fg), luminance(bg)].sort((x, y) => y - x)
+			const ratio = (hi + 0.05) / (lo + 0.05)
+			return {
+				text: (element.textContent ?? '').trim().slice(0, 40),
+				ratio: Math.round(ratio * 100) / 100,
+				fg: `rgb(${fg.slice(0, 3).map(Math.round).join(', ')})`,
+				bg: `rgb(${bg.map(Math.round).join(', ')})`,
+				ok: ratio >= minRatio,
+			}
+		})
+	}, { selector, minRatio })
+
+	await testInfo.attach(`readable-${name}.json`, { body: JSON.stringify(results, null, 2), contentType: 'application/json' })
+	if (results.length === 0) {
+		testInfo.annotations.push({ type: 'a11y-no-match', description: `no element matched "${selector}"` })
+		return
+	}
+
+	const failing = results.filter((r) => !r.ok)
+	if (REPORT_ONLY) {
+		testInfo.annotations.push({ type: 'a11y-report-only', description: `${failing.length} of ${results.length} below ${minRatio}:1` })
+		return
+	}
+	expect(
+		failing.map((r) => `"${r.text}" ${r.fg} on ${r.bg} = ${r.ratio}:1 (needs ${minRatio}:1)`),
+		`${selector}: ${results.length} element(s) checked`,
+	).toEqual([])
+}

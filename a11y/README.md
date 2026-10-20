@@ -38,10 +38,16 @@ The Files interaction tests use language-independent selectors, so they also wor
 ### Talk conversation (contrast of message bubbles)
 `pages.spec.ts` can scan a Talk conversation with history. The conversation token is specific to your instance
 (the last part of `/call/<token>`), so pass it in: `A11Y_TALK_TOKEN=<token> npm run test:pages`. Without it the test is skipped.
-Use a conversation with messages from you and from another account, because own messages are styled differently.
-The token tests also cover the Talk bubble colours (`talk messages` group). Talk draws own messages on
-`--color-primary-light` (text `--color-text-light`, hover `--color-primary-light-hover`); these tokens had no dark-mode
-value in the IONOS theme (contrast 1.1:1). `IonosTheme.php` now defines the whole `primary-light` family with `light-dark()`.
+Use a conversation with messages from you and from another account (own messages are styled differently), ideally with
+a quote, a mention and a link. The tests for light and dark mode run serially: Talk shows a conversation only once per
+login session ("Duplicate session"), so do not keep the same conversation open in another tab that uses this session.
+
+What the Talk test checks: axe on the whole page, axe with an own message hovered, and a contrast check of mention chips
+(`expectReadable`): axe reports them as "incomplete" (partly covered by their avatar), so a green axe result says nothing about them.
+
+Background of the dark-mode bug: Talk draws own messages on `--color-primary-light`, which stays light in dark mode, but
+colours their text with `--color-text-light` (and links with `--color-main-text`), which turn light (1.1:1).
+`apps/theming/css/ionos/talk.css` keeps the light bubble and uses dark text on it in dark mode; chips keep their own colours.
 
 ### Watch the browser
 ```bash

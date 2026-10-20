@@ -45,14 +45,9 @@ const pairs: Pair[] = [
 	{ group: 'core primary', fg: '--color-primary-element-light-text', bg: '--color-primary-element-light' },
 	{ group: 'core primary', fg: '--color-primary-element-light-text', bg: '--color-primary-element-light-hover' },
 
-	// --- Talk message bubbles (spreed MessageItem.vue / MessageBody.vue, v23):
-	// own ("outgoing") messages are painted with --color-primary-light and their text with --color-text-light,
-	// time and status with --color-text-maxcontrast; pinned/highlighted messages use --color-primary-element-light.
-	{ group: 'talk messages', fg: '--color-text-light', bg: '--color-primary-light' },
-	{ group: 'talk messages', fg: '--color-text-maxcontrast', bg: '--color-primary-light' },
-	{ group: 'talk messages', fg: '--color-text-light', bg: '--color-primary-element-light' },
-	// hovering an own message paints it with --color-primary-light-hover (--message-body-hover)
-	{ group: 'talk messages', fg: '--color-text-light', bg: '--color-primary-light-hover' },
+	// --- Talk message bubbles: own messages sit on --color-primary-light (and -hover when hovered) and use
+	// --color-primary-light-text in dark mode (talk.css), i.e. the two "core primary" pairs above. Their real rendering,
+	// including links, previews and mention chips, is checked by the Talk conversation test in pages.spec.ts.
 
 	// --- Feedback colours: recommended v33 text tokens
 	{ group: 'feedback (v33 tokens)', fg: '--color-text-error', bg: '--color-main-background' },
