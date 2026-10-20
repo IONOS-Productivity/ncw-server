@@ -7,7 +7,17 @@ declare(strict_types=1);
  */
 namespace OCA\Theming\Themes;
 
+use OCA\Theming\ImageManager;
 use OCA\Theming\ITheme;
+use OCA\Theming\ThemingDefaults;
+use OCA\Theming\Util;
+use OCP\App\IAppManager;
+use OCP\Config\IUserConfig;
+use OCP\IConfig;
+use OCP\IL10N;
+use OCP\IRequest;
+use OCP\IURLGenerator;
+use OCP\IUserSession;
 
 class IonosTheme extends DefaultTheme implements ITheme {
 
@@ -16,6 +26,21 @@ class IonosTheme extends DefaultTheme implements ITheme {
 	private const FONT_PATH_PREFIX = 'fonts/OpenSans/';
 
 	private static ?array $cachedCssFiles = null;
+
+	public function __construct(
+		Util $util,
+		ThemingDefaults $themingDefaults,
+		IUserSession $userSession,
+		IURLGenerator $urlGenerator,
+		ImageManager $imageManager,
+		IConfig $config,
+		IL10N $l,
+		IAppManager $appManager,
+		?IRequest $request,
+		private IUserConfig $userConfig,
+	) {
+		parent::__construct($util, $themingDefaults, $userSession, $urlGenerator, $imageManager, $config, $l, $appManager, $request);
+	}
 
 	private function getCssFiles(): array {
 		if (self::$cachedCssFiles !== null) {
@@ -57,7 +82,25 @@ class IonosTheme extends DefaultTheme implements ITheme {
 	}
 
 	public function getMediaQuery(): string {
-		return 'all';
+		// A media query makes the stylesheet apply unconditionally,
+		// so only request it while the theme is actually enabled
+		return $this->isEnabled() ? 'all' : '';
+	}
+
+	/**
+	 * The theme is enabled when it is enforced or chosen by the current user
+	 */
+	private function isEnabled(): bool {
+		if ($this->config->getSystemValueString('enforce_theme', '') === self::THEME_ID) {
+			return true;
+		}
+
+		$user = $this->userSession->getUser();
+		if ($user === null) {
+			return false;
+		}
+
+		return in_array(self::THEME_ID, $this->userConfig->getValueArray($user->getUID(), 'theming', 'enabled-themes', ['default']), true);
 	}
 
 	public function getCustomCss(): string {
