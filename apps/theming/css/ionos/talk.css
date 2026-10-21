@@ -78,6 +78,14 @@ div.app-talk.content {
 }
 
 /*
+ * The federated-user badge (globe) on an avatar sits on a circle painted with --color-main-background, which stays dark in
+ * dark mode. Its icon uses currentColor, so it would inherit the dark row text above (1.07:1): keep the normal text colour.
+ */
+.selectable-participant:has(input:checked) .avatar-wrapper__user-status {
+	color: var(--color-main-text);
+}
+
+/*
  * The chips of the selected participants use --color-primary-element-light, which IONOS gives a dark-mode value
  * (blue), but their text token stays dark navy (2.6:1). Give the chips of this dialog light text in dark mode.
  */
