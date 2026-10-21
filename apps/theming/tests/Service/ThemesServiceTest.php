@@ -21,6 +21,7 @@ use OCA\Theming\Themes\LightTheme;
 use OCA\Theming\ThemingDefaults;
 use OCA\Theming\Util;
 use OCP\App\IAppManager;
+use OCP\Config\IUserConfig;
 use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -405,6 +406,7 @@ class ThemesServiceTest extends TestCase {
 				$l10n,
 				$appManager,
 				null,
+				$this->createMock(IUserConfig::class),
 			),
 		];
 	}
