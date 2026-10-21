@@ -235,6 +235,14 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		$colorSuccessBackgroundDark = $this->util->mix($colorSuccess, $ionColorBlueB9, -80);
 		$colorInfoBackgroundLight = $this->util->mix($colorInfo, $colorMainBackground, -80);
 		$colorInfoBackgroundDark = $this->util->mix($colorInfo, $ionColorBlueB9, -80);
+		// Text colours on those backgrounds. Nextcloud's convention: colorX is the background, colorXText is the text colour ON
+		// it. The bright brand colours only reach 1.8-3:1 as text, so light mode uses the brand colour darkened (>= 4.5:1 on
+		// white and on the tints above), while dark mode keeps the bright brand colour (>= 6:1 on the dark background).
+		$colorTextDarken = 28;
+		$colorErrorText = $this->util->darken($colorError, $colorTextDarken);
+		$colorWarningText = $this->util->darken($colorWarning, $colorTextDarken);
+		$colorSuccessText = $this->util->darken($colorSuccess, $colorTextDarken);
+		$colorInfoText = $this->util->darken($colorInfo, $colorTextDarken);
 
 		$variables = [
 			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
@@ -248,6 +256,10 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--color-primary' => $colorPrimary,
 			'--color-primary-element' => $colorPrimary,
 			'--color-primary-element-light' => 'light-dark( #e5ebf3, var(--ion-color-blue-b5))',
+			// Its text and hover tokens must follow the dark background too (dark navy on blue-b5 was 2.64:1). The light values
+			// are the ones generatePrimaryVariables() produces. Talk's own messages keep the old light hover, see talk.css.
+			'--color-primary-element-light-text' => 'light-dark( #001839, var(--color-main-text))',
+			'--color-primary-element-light-hover' => 'light-dark( #d9dfe6, var(--ion-color-blue-b6))',
 
 			// to use like this: background-image: linear-gradient(0, var('--gradient-main-background));
 			'--gradient-main-background' => 'var(--color-main-background) 0%, var(--color-main-background-translucent) 85%, transparent 100%',
@@ -275,22 +287,25 @@ class IonosTheme extends DefaultTheme implements ITheme {
 
 			'--default-clickable-area' => '44px',
 			// error/warning/success/info feedback colours
+			// DefaultTheme computes these for light backgrounds only (dark red/green on dark blue = 2.9:1): keep its light value
+			'--color-text-error' => 'light-dark(' . $defaultVariables['--color-text-error'] . ', ' . $colorError . ')',
+			'--color-text-success' => 'light-dark(' . $defaultVariables['--color-text-success'] . ', ' . $colorSuccess . ')',
 			'--color-error' => 'light-dark(' . $colorErrorBackgroundLight . ', ' . $colorErrorBackgroundDark . ')',
 			'--color-error-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorErrorBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorErrorBackgroundDark)) . ')',
 			'--color-error-hover' => 'light-dark(' . $this->util->mix($colorErrorBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorError, $ionColorBlueB9, -60) . ')',
-			'--color-error-text' => $colorError,
+			'--color-error-text' => 'light-dark(' . $colorErrorText . ', ' . $colorError . ')',
 			'--color-warning' => 'light-dark(' . $colorWarningBackgroundLight . ', ' . $colorWarningBackgroundDark . ')',
 			'--color-warning-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorWarningBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorWarningBackgroundDark)) . ')',
 			'--color-warning-hover' => 'light-dark(' . $this->util->mix($colorWarningBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorWarning, $ionColorBlueB9, -60) . ')',
-			'--color-warning-text' => $colorWarning,
+			'--color-warning-text' => 'light-dark(' . $colorWarningText . ', ' . $colorWarning . ')',
 			'--color-success' => 'light-dark(' . $colorSuccessBackgroundLight . ', ' . $colorSuccessBackgroundDark . ')',
 			'--color-success-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorSuccessBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorSuccessBackgroundDark)) . ')',
 			'--color-success-hover' => 'light-dark(' . $this->util->mix($colorSuccessBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorSuccess, $ionColorBlueB9, -60) . ')',
-			'--color-success-text' => $colorSuccess,
+			'--color-success-text' => 'light-dark(' . $colorSuccessText . ', ' . $colorSuccess . ')',
 			'--color-info' => 'light-dark(' . $colorInfoBackgroundLight . ', ' . $colorInfoBackgroundDark . ')',
 			'--color-info-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorInfoBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorInfoBackgroundDark)) . ')',
 			'--color-info-hover' => 'light-dark(' . $this->util->mix($colorInfoBackgroundLight, $colorMainBackground, 40) . ', ' . $this->util->mix($colorInfo, $ionColorBlueB9, -60) . ')',
-			'--color-info-text' => $colorInfo,
+			'--color-info-text' => 'light-dark(' . $colorInfoText . ', ' . $colorInfo . ')',
 			'--color-favorite' => $ionColorAmberY3,
 			// used for the icon loading animation
 			'--color-loading-light' => '#cccccc',

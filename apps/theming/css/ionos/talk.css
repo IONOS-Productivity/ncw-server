@@ -19,6 +19,10 @@ div.app-talk.content {
 		--color-main-text: var(--ion-bubble-text);
 		--color-text-light: var(--ion-bubble-text);
 		--color-text-maxcontrast: var(--ion-bubble-text);
+		/* the quote block inside an own message uses this token as its background: it stays on the light bubble */
+		--color-primary-element-light-hover: var(--color-primary-light-hover);
+		/* reactions and similar controls inside an own message sit on the light bubble too: dark text there */
+		--color-primary-element-light-text: var(--color-primary-light-text);
 		color: var(--ion-bubble-text);
 
 		/* Chips (mentions) keep their own dark background in dark mode, so they keep the normal text colour */
