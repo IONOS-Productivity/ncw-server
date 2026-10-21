@@ -64,3 +64,23 @@ div.app-talk.content {
 		}
 	}
 }
+
+/*
+ * "New conversation" dialog (a modal rendered outside .app-talk, hence a top-level rule) and the breakout rooms editor.
+ * Selected participants are drawn on --color-primary-light, which stays light in dark mode, but their name, subname and
+ * check icon take the normal text colour, which turns light in dark mode (1.1:1). Keep the light bar and use dark text on
+ * it in dark mode. Light mode values are unchanged.
+ */
+.selectable-participant:has(input:checked) {
+	--ion-selected-text: light-dark(var(--ion-color-cool-grey-c7), var(--color-primary-light-text));
+	--color-text-maxcontrast: var(--ion-selected-text);
+	color: var(--ion-selected-text);
+}
+
+/*
+ * The chips of the selected participants use --color-primary-element-light, which IONOS gives a dark-mode value
+ * (blue), but their text token stays dark navy (2.6:1). Give the chips of this dialog light text in dark mode.
+ */
+.selected-participants {
+	--color-primary-element-light-text: light-dark(var(--color-primary-light-text), var(--color-main-text));
+}
