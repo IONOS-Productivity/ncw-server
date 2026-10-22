@@ -248,6 +248,8 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--color-primary' => $colorPrimary,
 			'--color-primary-element' => $colorPrimary,
 			'--color-primary-element-light' => 'light-dark( #e5ebf3, var(--ion-color-blue-b5))',
+			'--color-primary-element-light-hover' => 'light-dark( #d4dce8, var(--ion-color-blue-b6))',
+			'--color-primary-element-light-text' => 'light-dark( var(--color-primary-light-text), var(--color-main-text))',
 
 			// to use like this: background-image: linear-gradient(0, var('--gradient-main-background));
 			'--gradient-main-background' => 'var(--color-main-background) 0%, var(--color-main-background-translucent) 85%, transparent 100%',

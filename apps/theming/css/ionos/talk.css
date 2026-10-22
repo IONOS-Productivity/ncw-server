@@ -60,6 +60,29 @@ div.app-talk.content {
 }
 
 /*
+ * The App Settings dialog (NcAppSettingsDialog → NcDialog → NcModal) uses Vue Teleport to render at
+ * the <body> level, outside div.app-talk.content, so scoped message-bubble rules don't reach it.
+ * Duplicate the outgoing-message fix here.
+ */
+.app-settings {
+	li.message.outgoing .message-body {
+		--ion-bubble-text: light-dark(var(--ion-color-cool-grey-c7), var(--color-primary-light-text));
+		--color-main-text: var(--ion-bubble-text);
+		--color-text-light: var(--ion-bubble-text);
+		--color-text-maxcontrast: var(--ion-bubble-text);
+		color: var(--ion-bubble-text);
+	}
+
+	li.message.outgoing .message-body .nc-chip {
+		--ion-chip-text-normal: light-dark(var(--ion-color-cool-grey-c7), var(--ion-color-cool-grey-c1));
+		--color-main-text: var(--ion-chip-text-normal);
+		--color-text-light: var(--ion-chip-text-normal);
+		--color-text-maxcontrast: var(--ion-chip-text-normal);
+		color: var(--ion-chip-text-normal);
+	}
+}
+
+/*
  * "New conversation" dialog (a modal rendered outside .app-talk, hence a top-level rule) and the breakout rooms editor.
  * Selected participants are drawn on --color-primary-light, which stays light in dark mode, but their name, subname and
  * check icon take the normal text colour, which turns light in dark mode (1.1:1). Keep the light bar and use dark text on
