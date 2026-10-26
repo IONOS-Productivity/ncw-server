@@ -31,6 +31,8 @@ const pages: PageCase[] = [
 	{ name: 'files', path: '/apps/files/', ready: '[data-cy-files-list], .files-list, #app-content-vue', auth: true },
 	{ name: 'personal-settings', path: '/settings/user', ready: '#app-content, #content-vue, main', auth: true },
 	{ name: 'admin-settings', path: '/settings/admin', ready: '#app-content, #content-vue, main', auth: true },
+	// Appearance settings: the "Theme selection is enforced" notice is drawn with --color-warning-text on --color-warning
+	{ name: 'theming-settings', path: '/settings/user/theming', ready: '.theming__preview', auth: true },
 ]
 
 /**
@@ -75,6 +77,25 @@ for (const scheme of ['light', 'dark'] as const) {
 				await context?.close()
 			})
 		}
+	})
+}
+
+/**
+ * The notice is only rendered when `enforce_theme` is set (which the IONOS setup does), so the page scan above only
+ * covers it by chance. This test makes sure it is on screen and scanned, so a missing notice cannot pass silently.
+ */
+for (const scheme of ['light', 'dark'] as const) {
+	test.describe(`IONOS theme appearance settings - ${scheme} mode`, () => {
+		test.use({ colorScheme: scheme })
+
+		test('"Theme selection is enforced" notice is readable', async ({ page }, testInfo) => {
+			await page.goto(`${await getPathPrefix()}/settings/user/theming`)
+			const notice = page.locator('.theming__preview-warning').first()
+			await expect(notice, 'the notice needs `enforce_theme` to be set, see README').toBeVisible({ timeout: 30_000 })
+			await expectNoA11yViolations(page, testInfo, `state-${scheme}-theming-enforced-notice`, {
+				include: ['.theming__preview-warning'],
+			})
+		})
 	})
 }
 
