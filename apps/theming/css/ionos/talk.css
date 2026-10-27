@@ -16,8 +16,11 @@ div.app-talk.content {
 		color: var(--ion-bubble-text);
 	}
 
-	/* Mention chips in outgoing messages: dark text on the light bubble, normal text on the chip's own dark background */
-	li.message.outgoing .message-body .nc-chip {
+	/*
+	 * Mention chips and quotes in outgoing messages: dark text on the light bubble, but normal text on the chip's own
+	 * dark background and on the quote, which Talk paints with --color-primary-element-light-hover (dark in dark mode)
+	 */
+	li.message.outgoing .message-body :is(.nc-chip, .quote) {
 		--ion-chip-text-normal: light-dark(var(--ion-color-cool-grey-c7), var(--ion-color-cool-grey-c1));
 		--color-main-text: var(--ion-chip-text-normal);
 		--color-text-light: var(--ion-chip-text-normal);
@@ -73,7 +76,7 @@ div.app-talk.content {
 		color: var(--ion-bubble-text);
 	}
 
-	li.message.outgoing .message-body .nc-chip {
+	li.message.outgoing .message-body :is(.nc-chip, .quote) {
 		--ion-chip-text-normal: light-dark(var(--ion-color-cool-grey-c7), var(--ion-color-cool-grey-c1));
 		--color-main-text: var(--ion-chip-text-normal);
 		--color-text-light: var(--ion-chip-text-normal);
