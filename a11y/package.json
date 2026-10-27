@@ -1,0 +1,20 @@
+{
+	"name": "ncw-a11y",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Accessibility (axe-core + Playwright) checks for the IONOS theming customisations",
+	"scripts": {
+		"test": "playwright test",
+		"test:tokens": "playwright test --project=theme-tokens",
+		"test:pages": "playwright test --project=pages",
+		"report": "playwright show-report",
+		"summary": "node scripts/summary.mjs",
+		"browsers": "playwright install chromium"
+	},
+	"devDependencies": {
+		"@axe-core/playwright": "4.13.0",
+		"@playwright/test": "1.63.0",
+		"@types/node": "^22.0.0",
+		"typescript": "^5.6.0"
+	}
+}
