@@ -108,6 +108,11 @@
 		margin: 0;
 	}
 
+	#body-public.eurooffice-inline & {
+		margin: 0;
+		height: 100vh;
+	}
+
 	.app-content .chatView .wrapper {
 		bottom: var(--header-height);
 	}
