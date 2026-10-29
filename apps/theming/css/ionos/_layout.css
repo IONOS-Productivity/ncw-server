@@ -103,8 +103,12 @@
 	margin: var(--header-height) 0 0;
 	border-radius: 0;
 
-	/* The core #content wrapper already sits below the header */
-	#content > & {
+	/*
+	 * No header offset when the core #content wrapper already sits below the header,
+	 * or when the inline Eurooffice editor fills #content-vue itself (inset: 0)
+	 */
+	#content > &,
+	body.eurooffice-inline & {
 		margin: 0;
 	}
 
