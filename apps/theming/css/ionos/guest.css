@@ -9,3 +9,8 @@
 #body-login footer .info {
 	color: var(--color-text);
 }
+
+#body-login footer.guest-box,
+#body-public footer.guest-box {
+	box-shadow:	none;
+}
