@@ -14,3 +14,7 @@
 #body-public footer.guest-box {
 	box-shadow:	none;
 }
+
+#body-public #app-content-vue div.files-list__header {
+	margin-left: 16px;
+}
