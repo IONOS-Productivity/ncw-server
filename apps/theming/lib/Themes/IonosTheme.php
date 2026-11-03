@@ -228,8 +228,13 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		$colorInfoBackgroundDark = $this->util->mix($colorInfo, $ionColorBlueB9, -80);
 
 		$variables = [
-			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
+			// LAYOUT: distances
 			'--header-height' => '64px',
+			'--default-clickable-area' => '44px',
+			// content area runs edge-to-edge below the header (no floating card with margin/radius)
+			'--body-container-margin' => '0px',
+			'--body-container-radius' => '0px',
+			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
 			'--color-main-background' => $ionColorMainBackground,
 			'--color-main-background-rgb-light' => join(',', $this->util->hexToRGB('#ffffff')),
 			'--color-main-background-rgb-dark' => join(',', $this->util->hexToRGB($ionColorBlueB8)),
@@ -266,7 +271,6 @@ class IonosTheme extends DefaultTheme implements ITheme {
 
 			'--color-scrollbar' => $ionColorTypoMild,
 
-			'--default-clickable-area' => '44px',
 			// error/warning/success/info feedback colours
 			'--color-error' => 'light-dark(' . $colorErrorBackgroundLight . ', ' . $colorErrorBackgroundDark . ')',
 			'--color-error-rgb' => 'light-dark(' . join(',', $this->util->hexToRGB($colorErrorBackgroundLight)) . ', ' . join(',', $this->util->hexToRGB($colorErrorBackgroundDark)) . ')',

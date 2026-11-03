@@ -1,0 +1,65 @@
+/*
+ * SPDX-FileCopyrightText: 2026 STRATO GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
+ * Layout: only what cannot be expressed through the theme variables set in IonosTheme.php
+ * (--header-height, --default-clickable-area, --body-container-margin/-radius).
+ */
+
+/* Header: IONOS logo + product info on a plain bar with a soft shadow */
+:is(#body-settings, #body-user, #body-login, #body-public) #header {
+	background-color: var(--color-background-plain);
+	box-shadow: var(--ion-shadow-header);
+
+	#nextcloud {
+		margin-inline-start: 12px;
+		padding-inline-start: 370px;
+
+		@media (max-width: 768px) {
+			padding-inline-start: 100px;
+		}
+	}
+
+	.logo {
+		width: 350px;
+		height: 84px;
+		top: inherit;
+		bottom: inherit;
+		filter: none;
+	}
+
+	.header-info {
+		margin-top: 8px;
+
+		&::before {
+			content: "| ";
+		}
+
+		@media (max-width: 768px) {
+			display: none;
+		}
+	}
+
+	@media (prefers-color-scheme: dark) {
+		.logo,
+		.header-info {
+			filter: invert(100%) saturate(1%) brightness(99%) contrast(200%);
+		}
+	}
+}
+
+/* No bar shadow on the login page, and the logo sits higher there */
+#body-login #header {
+	box-shadow: none;
+
+	.logo {
+		top: -20px;
+	}
+}
+
+/* App navigation: wider horizontal gutter than the default 2 * baseline */
+.app-navigation__content > ul {
+	padding-inline: calc(var(--default-grid-baseline) * 5);
+}
