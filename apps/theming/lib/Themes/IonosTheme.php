@@ -234,6 +234,11 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			// content area runs edge-to-edge below the header (no floating card with margin/radius)
 			'--body-container-margin' => '0px',
 			'--body-container-radius' => '0px',
+			// SHAPE: border radii
+			// containers such as action menus (default 12px)
+			'--border-radius-container' => '16px',
+			// buttons are pills, see css/ionos/shape.css
+			'--ion-radius-button' => '30px',
 			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
 			'--color-main-background' => $ionColorMainBackground,
 			'--color-main-background-rgb-light' => join(',', $this->util->hexToRGB('#ffffff')),

@@ -1,0 +1,33 @@
+/*
+ * SPDX-FileCopyrightText: 2026 STRATO GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
+ * Shape: border radii. The radius tokens themselves live in IonosTheme.php; the rules below
+ * only re-scope --border-radius-element where a component should be rounder than the default.
+ */
+
+/*
+ * Buttons are pills. NcButton derives its radius and its horizontal padding
+ * (baseline + radius) from --border-radius-element, so keep the padding at 4 baselines
+ * instead of letting it grow with the radius.
+ * The doubled class beats NcButton's own scoped rule.
+ */
+body .button-vue.button-vue {
+	--border-radius-element: var(--ion-radius-button);
+	--button-padding-default: calc(var(--default-grid-baseline) * 4);
+}
+
+/* Navigation entries are pills as well */
+.app-navigation {
+	--border-radius-element: var(--border-radius-pill);
+}
+
+/* Action menus (context menus) use the container radius instead of the element radius */
+.v-popper__popper.action-item__popper {
+	.v-popper__wrapper,
+	.v-popper__inner {
+		border-radius: var(--border-radius-container);
+	}
+}
