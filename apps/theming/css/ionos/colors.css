@@ -1,0 +1,54 @@
+/*
+ * SPDX-FileCopyrightText: 2026 STRATO GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
+ * Colors: the palette and semantic tokens (--color-*, --ion-*) are defined in IonosTheme.php.
+ * Only what cannot be a plain custom property lives here.
+ */
+
+/*
+ * Legacy values that core still reads and that cannot use light-dark():
+ * - filters (filter: does not accept light-dark())
+ * - RGB triplets for rgba(var(--color-main-background-rgb), x)
+ */
+& {
+	--background-invert-if-dark: no;
+	--background-invert-if-bright: invert(100%);
+	--background-image-invert-if-bright: no;
+	--primary-invert-if-bright: no;
+	--primary-invert-if-dark: invert(100%);
+	--color-main-background-rgb: 255, 255, 255;
+
+	@media (prefers-color-scheme: dark) {
+		--background-invert-if-dark: invert(100%);
+		--background-invert-if-bright: no;
+		--background-image-invert-if-bright: invert(100%);
+		--primary-invert-if-bright: invert(100%);
+		--primary-invert-if-dark: no;
+		--color-main-background-rgb: 2, 16, 43;
+	}
+}
+
+/* App navigation sits on the secondary surface */
+.app-navigation,
+#app-navigation:not(.vue) {
+	background-color: var(--ion-surface-secondary);
+}
+
+/*
+ * Secondary buttons are outlined and filled on hover. Primary, tertiary and the
+ * error/warning/success variants come from the --color-* tokens.
+ * `.button-vue--vue-secondary` is the class of apps still built with @nextcloud/vue 8.
+ */
+body .button-vue:is(.button-vue--secondary, .button-vue--vue-secondary) {
+	background-color: transparent;
+	border: 2px solid var(--ion-button-secondary-text);
+	color: var(--ion-button-secondary-text);
+
+	&:hover:not(:disabled) {
+		background-color: var(--ion-button-secondary-text);
+		color: var(--ion-button-secondary-text-hover);
+	}
+}

@@ -100,7 +100,7 @@ for (const scheme of ['light', 'dark'] as const) {
 }
 
 /**
- * Interactive states styled by apps/theming/css/ionos/{files,buttons}.css and the --ion-context-menu-* tokens.
+ * Interactive states of the IONOS theme (apps/theming/css/ionos/*.css and the theme tokens).
  * Static page loads never show these, so regressions in them stay invisible without explicit steps.
  * Kept deliberately small (two Files menus, the second one also hovered): they are smoke checks that the tokens
  * really reach the components; the colour pairs themselves are covered by theme-tokens.spec.ts.

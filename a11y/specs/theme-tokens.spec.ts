@@ -14,7 +14,7 @@ import { expectNoA11yViolations, PATH_PREFIX } from '../helpers/axe'
  * foreground/background token pair. axe then computes the contrast for the real,
  * resolved colours (light-dark(), var() chains, ...) in both colour schemes.
  *
- * So whenever someone touches a colour in IonosTheme.php or css/ionos/variables.css
+ * So whenever someone touches a colour in IonosTheme.php or css/ionos/colors.css
  * this tells us which pairing stopped being readable - without having to click
  * through the whole UI.
  *
@@ -45,9 +45,8 @@ const pairs: Pair[] = [
 	{ group: 'core primary', fg: '--color-primary-element-light-text', bg: '--color-primary-element-light' },
 	{ group: 'core primary', fg: '--color-primary-element-light-text', bg: '--color-primary-element-light-hover' },
 
-	// --- Talk message bubbles: own messages sit on --color-primary-light (and -hover when hovered) and use
-	// --color-primary-light-text in dark mode (talk.css), i.e. the two "core primary" pairs above. Their real rendering,
-	// including links, previews and mention chips, is checked by the Talk conversation test in pages.spec.ts.
+	// --- Talk message bubbles: own messages sit on --color-primary-light (and -hover when hovered). Their real
+	// rendering, including links, previews and mention chips, is checked by the Talk conversation test in pages.spec.ts.
 
 	// --- Feedback colours: recommended v33 text tokens
 	{ group: 'feedback (v33 tokens)', fg: '--color-text-error', bg: '--color-main-background' },
@@ -63,43 +62,14 @@ const pairs: Pair[] = [
 	{ group: 'feedback (legacy -text tokens)', fg: '--color-info-text', bg: '--color-main-background' },
 	{ group: 'feedback (legacy -text tokens)', fg: '--color-info-text', bg: '--color-info' },
 
-	// --- IONOS general text
-	{ group: 'ionos text', fg: '--ion-text', bg: '--ion-surface-primary' },
-	{ group: 'ionos text', fg: '--ion-text', bg: '--ion-surface-secondary' },
-	{ group: 'ionos text', fg: '--ion-text', bg: '--ion-surface-dialog' },
-	{ group: 'ionos text', fg: '--ion-text', bg: '--ion-list-background-hover' },
-	{ group: 'ionos text', fg: '--ion-text', bg: '--ion-list-background-active' },
-	{ group: 'ionos text', fg: '--ion-text', bg: '--ion-tables-header-background-color' },
-	{ group: 'ionos text', fg: '--ion-breadcrumb-text-default', bg: '--ion-color-main-background' },
-	{ group: 'ionos text', fg: '--ion-breadcrumb-text-hover', bg: '--ion-color-main-background' },
-	{ group: 'ionos text', fg: '--ion-breadcrumb-text-active', bg: '--ion-color-main-background' },
+	// --- IONOS surfaces and outlined secondary buttons (the only --ion-* tokens left, see IonosTheme.php)
+	{ group: 'ionos', fg: '--color-main-text', bg: '--ion-surface-secondary' },
+	{ group: 'ionos', fg: '--color-text-maxcontrast', bg: '--ion-surface-secondary' },
+	{ group: 'ionos', fg: '--ion-button-secondary-text', bg: '--color-main-background' },
+	{ group: 'ionos', fg: '--ion-button-secondary-text-hover', bg: '--ion-button-secondary-text' },
 
-	// --- IONOS buttons
-	{ group: 'ionos buttons', fg: '--ion-button-primary-text', bg: '--ion-button-primary-background-default' },
-	{ group: 'ionos buttons', fg: '--ion-button-primary-text', bg: '--ion-button-primary-background-hover' },
-	{ group: 'ionos buttons', fg: '--ion-button-primary-text', bg: '--ion-button-primary-background-active' },
-	{ group: 'ionos buttons', fg: '--ion-button-secondary-text', bg: '--ion-button-secondary-background-default' },
-	{ group: 'ionos buttons', fg: '--ion-button-secondary-text-hover', bg: '--ion-button-secondary-background-hover' },
-	{ group: 'ionos buttons', fg: '--ion-button-secondary-text-active', bg: '--ion-button-secondary-background-active' },
-	{ group: 'ionos buttons', fg: '--ion-button-tertiary-text', bg: '--ion-button-tertiary-background-default' },
-	{ group: 'ionos buttons', fg: '--ion-button-tertiary-text', bg: '--ion-button-tertiary-background-hover' },
-	{ group: 'ionos buttons', fg: '--ion-button-tertiary-text', bg: '--ion-button-tertiary-background-active' },
-	{ group: 'ionos buttons', fg: '--ion-button-sidebar-text', bg: '--ion-button-sidebar-background-hover' },
-	{ group: 'ionos buttons', fg: '--ion-button-sidebar-text', bg: '--ion-button-sidebar-background-active' },
-	{ group: 'ionos buttons', fg: '--ion-button--icon-only-text', bg: '--ion-button--icon-only-background' },
-	{ group: 'ionos buttons', fg: '--ion-button--icon-only-text-hover', bg: '--ion-button--icon-only-background-hover' },
-	{ group: 'ionos buttons', fg: '--ion-button-sidebar--icon-only-text', bg: '--ion-button-sidebar--icon-only-background' },
-	{ group: 'ionos buttons', fg: '--ion-button-sidebar--icon-only-text', bg: '--ion-button-sidebar--icon-only-background-hover' },
-	{ group: 'ionos buttons', fg: '--ion-button-error-text', bg: '--ion-button-error-background-default' },
-	{ group: 'ionos buttons', fg: '--ion-button-error-text', bg: '--ion-button-error-background-hover' },
-	{ group: 'ionos buttons', fg: '--ion-button-warning-text', bg: '--ion-button-warning-background-default' },
-	{ group: 'ionos buttons', fg: '--ion-button-warning-text', bg: '--ion-button-warning-background-hover' },
-
-	// --- IONOS context menu, chips
-	{ group: 'ionos menus', fg: '--ion-context-menu-item-text', bg: '--ion-context-menu-background' },
-	{ group: 'ionos menus', fg: '--ion-context-menu-item-text', bg: '--ion-context-menu-item-background-hover' },
-	{ group: 'ionos menus', fg: '--ion-context-menu-item-text', bg: '--ion-context-menu-item-background-active' },
-	{ group: 'ionos menus', fg: '--ion-chip-text', bg: '--ion-chip-background' },
+	// --- Header bar and modal backdrop text
+	{ group: 'ionos', fg: '--color-background-plain-text', bg: '--color-background-plain' },
 ]
 
 const schemes = ['light', 'dark'] as const

@@ -195,6 +195,9 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--ion-color-cool-grey-c8' => $ionColorCoolGreyC8,
 			'--ion-color-cool-grey-c9' => $ionColorCoolGreyC9,
 			'--ion-color-typo-mild' => $ionColorTypoMild,
+			'--ion-surface-secondary' => 'light-dark(var(--ion-color-cool-grey-c1), var(--ion-color-cool-grey-c8))',
+			'--ion-button-secondary-text' => 'light-dark(var(--ion-color-blue-b7), var(--ion-color-cool-grey-c1))',
+			'--ion-button-secondary-text-hover' => 'light-dark(#ffffff, var(--ion-color-blue-b7))',
 		];
 
 
@@ -241,13 +244,15 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--ion-radius-button' => '30px',
 			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
 			'--color-main-background' => $ionColorMainBackground,
-			'--color-main-background-rgb-light' => join(',', $this->util->hexToRGB('#ffffff')),
-			'--color-main-background-rgb-dark' => join(',', $this->util->hexToRGB($ionColorBlueB8)),
-			'--color-main-background-rgb' => 'light-dark(var(--color-main-background-rgb-light), var(--color-main-background-rgb-dark))',
-			'--color-main-background-translucent' => 'rgba(var(--color-main-background-rgb), .97)',
+			'--color-main-background-translucent' => 'color-mix(in srgb, var(--color-main-background) 97%, transparent)',
 			'--color-main-background-blur' => 'light-dark(#ffffffcc, #02102Bcc)',
+			// text/icons on the header bar (app menu, unified search, ...) and on modal backdrops
+			'--color-background-plain-text' => 'light-dark(var(--ion-color-secondary), var(--ion-color-cool-grey-c1))',
+			'--background-image-color-text' => 'light-dark(#ffffff, var(--ion-color-cool-grey-c1))',
 			'--color-primary' => $colorPrimary,
-			'--color-primary-element' => $colorPrimary,
+			'--color-primary-element' => 'light-dark(var(--ion-color-blue-b7), var(--ion-color-blue-b4))',
+			'--color-primary-element-hover' => 'light-dark(var(--ion-color-blue-b4), var(--ion-color-blue-b5))',
+			'--color-primary-element-text' => '#ffffff',
 			'--color-primary-element-light' => 'light-dark( #e5ebf3, var(--ion-color-blue-b5))',
 			'--color-primary-element-light-hover' => 'light-dark( #d4dce8, var(--ion-color-blue-b6))',
 			'--color-primary-element-light-text' => 'light-dark( var(--color-primary-light-text), var(--color-main-text))',
