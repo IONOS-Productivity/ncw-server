@@ -167,14 +167,10 @@ class IonosTheme extends DefaultTheme implements ITheme {
 		$ionColorCoolGreyC8 = '#1D2D42';
 		$ionColorCoolGreyC9 = '#0A121C';
 		$ionColorTypoMild = 'light-dark(var(--ion-color-cool-grey-c7), var(--ion-color-cool-grey-c1))';
-		$ionColorLightGrey = '#d7d7d7';
 		$ionColorGreenG3 = '#12cf76';
 		$ionColorRoseR3 = '#ff6159';
 		$ionColorSkyS3 = '#11c7e6';
 		$ionColorAmberY3 = '#ffaa00';
-		$ionColorAmberY4 = '#EF8300';
-		$ionColorAmberY5 = '#c36b00';
-		$ionColorAmberY6 = '#8E4E00';
 
 		$ionosVariables = [
 			'--ion-color-main-background' => $ionColorMainBackground,
@@ -199,14 +195,6 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--ion-color-cool-grey-c8' => $ionColorCoolGreyC8,
 			'--ion-color-cool-grey-c9' => $ionColorCoolGreyC9,
 			'--ion-color-typo-mild' => $ionColorTypoMild,
-			'--ion-color-light-grey' => $ionColorLightGrey,
-			'--ion-color-green-g3' => $ionColorGreenG3,
-			'--ion-color-rose-r3' => $ionColorRoseR3,
-			'--ion-color-sky-s3' => $ionColorSkyS3,
-			'--ion-color-amber-y3' => $ionColorAmberY3,
-			'--ion-color-amber-y4' => $ionColorAmberY4,
-			'--ion-color-amber-y5' => $ionColorAmberY5,
-			'--ion-color-amber-y6' => $ionColorAmberY6,
 		];
 
 
@@ -243,9 +231,9 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
 			'--header-height' => '64px',
 			'--color-main-background' => $ionColorMainBackground,
-			'--color-main-background-rbg-light' => join(',', $this->util->hexToRGB('#ffffff')),
-			'--color-main-backgrond-rgb-dark' => join(',', $this->util->hexToRGB($ionColorBlueB8)),
-			'--color-main-background-rgb' => 'light-dark(var(--color-main-background-rbg-light), var(--color-main-backgrond-rgb-dark))',
+			'--color-main-background-rgb-light' => join(',', $this->util->hexToRGB('#ffffff')),
+			'--color-main-background-rgb-dark' => join(',', $this->util->hexToRGB($ionColorBlueB8)),
+			'--color-main-background-rgb' => 'light-dark(var(--color-main-background-rgb-light), var(--color-main-background-rgb-dark))',
 			'--color-main-background-translucent' => 'rgba(var(--color-main-background-rgb), .97)',
 			'--color-main-background-blur' => 'light-dark(#ffffffcc, #02102Bcc)',
 			'--color-primary' => $colorPrimary,
@@ -269,7 +257,7 @@ class IonosTheme extends DefaultTheme implements ITheme {
 
 			// max contrast for WCAG compliance
 			'--color-main-text' => $ionColorTypoMild,
-			'--color-text' => 'light-dark(var(--ion-color-cool-grey-c7), var(--ion-color-cool-grey-c7))',
+			'--color-text' => 'var(--ion-color-cool-grey-c7)',
 			'--color-text-maxcontrast' => $ionColorTypoMild,
 			'--color-text-maxcontrast-default' => $ionColorTypoMild,
 			'--color-text-maxcontrast-background-blur' => $ionColorTypoMild,

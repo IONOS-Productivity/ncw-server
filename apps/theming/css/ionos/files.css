@@ -97,7 +97,6 @@ div.files-list__header:has(div.files-list__breadcrumbs), .file-picker {
 			/* ensure the icon-only buttons look correct */
 			button.button-vue--icon-only, a.button-vue--icon-only svg {
 				background-color: transparent;
-				color: var(--ion-breadcrumb-text);
 				&:hover {
 					color: var(--ion-breadcrumb-text-hover);
 					background-color: inherit;
@@ -123,7 +122,6 @@ div.files-list__header:has(div.files-list__breadcrumbs), .file-picker {
 			}
 
 			.vue-crumb__separator {
-				color: var(--ion-breadcrumb-text);
 				width: 16px;
 				height: 16px;
 			}
@@ -315,12 +313,6 @@ div.v-popper--theme-dropdown.v-popper__popper:has(.v-popper__wrapper), .header-m
 					background-color: var(--ion-dialog-filter-button-background);
 					&:hover {
 						background-color: var(--ion-button-tertiary-background-hover);
-
-						.button-vue__wrapper {
-							span.button-vue__text, .button-vue__icon svg {
-								color: var(--ion-button-tertiary-text-hover);
-							}
-						}
 					}
 					&:active {
 						background-color: var(--ion-button-tertiary-background-active);
@@ -339,14 +331,8 @@ div.v-popper--theme-dropdown.v-popper__popper:has(.v-popper__wrapper), .header-m
 					color: var(--ion-chip-text);
 					border: none;
 
-					span.icon {
-						.calendar-range-icon {
-							width: 20px;
-							height: 20px;
-						}
-						img {
-							filter: none;
-						}
+					span.icon img {
+						filter: none;
 					}
 				}
 			}
@@ -355,17 +341,6 @@ div.v-popper--theme-dropdown.v-popper__popper:has(.v-popper__wrapper), .header-m
 		.unified-search-modal__results {
 			h4.result-title {
 				color: var(--ion-text);
-			}
-
-			ul.result-items {
-				li.result-items__item div.list-item, li.result-items__item div.list-item a{
-					background-color: var(--ion-dialog-files-list-background);
-					border: none;
-					&:hover, &.active {
-						background-color: var(--ion-dialog-files-list-background-hover);
-						border: none;
-					}
-				}
 			}
 		}
 	}
