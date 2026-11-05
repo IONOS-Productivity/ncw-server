@@ -1,0 +1,206 @@
+# SPDX-FileCopyrightText: 2026 STRATO GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Weekly sweep of every IONOS-forked apps-external/* submodule. Only acts on the two verdicts
+# .dev/docs/how-to/upgrade-fork-app.md already calls unambiguous:
+#   - **mirror bump** (zero fork-only commits): pushes a working branch at the upstream tag and
+#     opens a PR in the fork's own repo (nothing is pushed to the fork's existing branches). If
+#     history doesn't fast-forward, a fresh branch is cut at the tag instead (matching the
+#     nc-notifications precedent) and reported in the run summary for a human.
+#   - **rebase** with a 100%-clean cherry-pick (verified by actually attempting it, not
+#     inferred from the scan): opens PR 1 in the fork's own repo, per upgrade-fork-app.md's
+#     format. Any conflict aborts that app's cherry-pick entirely and leaves it for a human —
+#     never auto-resolved.
+#
+# NOT YET BUILT: a follow-up step that moves the server-repo gitlink once a fork PR (mirror or
+# rebase) merges and is tagged (upgrade-fork-app.md §10) — today that half of the flow still
+# needs a human to run it by hand after reviewing and merging the bot's fork PR. Add a
+# release-triggered workflow in each fork repo (or a `command-*`-style follow-up here) before
+# relying on this to be fully hands-off.
+#
+# A `**rebase**, major` row (upstream jumped a major version) is left untouched, same posture as
+# vanilla-apps' **major** rows — a human decides whether to take it.
+name: Scheduled fork apps bump
+
+on:
+  schedule:
+    - cron: '0 7 * * 1' # weekly, Monday 07:00 UTC (offset from the vanilla-apps sweep)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-fork-apps-bump
+  cancel-in-progress: false
+
+jobs:
+  scan-and-bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      # Optional trial-run controls (repo variables). ONLY_APPS e.g. "activity"; DRY_RUN "1"
+      # scans and checks cherry-picks but pushes nothing and opens no PRs.
+      ONLY_APPS: ${{ vars.UPGRADE_ONLY_APPS }}
+      DRY_RUN: ${{ vars.UPGRADE_DRY_RUN }}
+    steps:
+      - name: Checkout ncw-server (default integration branch)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          path: ncw-server
+          token: ${{ secrets.UPGRADE_BOT_PAT }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Checkout nc-docs-and-tools (not a submodule — needed for .dev/tools/*.sh)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        with:
+          repository: IONOS-Productivity/nc-docs-and-tools
+          path: nc-docs-and-tools
+          token: ${{ secrets.UPGRADE_BOT_PAT }}
+
+      - name: Configure bot git identity
+        working-directory: ncw-server
+        run: |
+          git config --global user.name 'ncw-upgrade-bot'
+          git config --global user.email 'ncw-upgrade-bot@users.noreply.github.com'
+          git config --global url."https://x-access-token:${{ secrets.UPGRADE_BOT_PAT }}@github.com/".insteadOf "https://github.com/"
+          # .gitmodules URLs are SSH (git@github.com:...); route them over HTTPS with the same token.
+          git config --global --add url."https://x-access-token:${{ secrets.UPGRADE_BOT_PAT }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Resolve integration branch and NC target
+        id: resolve
+        working-directory: ncw-server
+        run: |
+          branch=$(git branch --show-current)
+          nc_target=$(sed -n "s/^\$OC_Version = \[\([0-9]*\),.*/\1/p" version.php)
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "nc_target=$nc_target" >> "$GITHUB_OUTPUT"
+
+      - name: Scan and attempt mechanical bumps
+        id: bump
+        working-directory: ncw-server
+        run: |
+          set -o pipefail
+          ../nc-docs-and-tools/tools/bump-fork-apps.sh \
+            . \
+            /tmp/fork-scratch \
+            /tmp/fork-scan.md \
+            /tmp/fork-summary.sh | tee /tmp/fork-bump-log.txt
+          source /tmp/fork-summary.sh
+          echo "mirror_count=$(wc -w <<<"${MIRROR_READY:-}")" >> "$GITHUB_OUTPUT"
+          echo "rebase_count=$(wc -w <<<"${REBASE_READY:-}")" >> "$GITHUB_OUTPUT"
+        # bump-fork-apps.sh propagates the scan's own exit 1 on network/rate-limit/not-initialised
+        # error — intentionally not caught here.
+
+      - name: Define PR base-branch helper
+        run: |
+          # Base for fork PRs: ionos-dev-v<NC target> if the fork has it, else the highest
+          # ionos-dev-v<N> branch, else the fork's default branch.
+          cat > /tmp/fork-base.sh <<'EOS'
+          fork_base_branch() {
+            local dir=$1 want="ionos-dev-v${NC_TARGET}" branches pick
+            branches=$(git -C "$dir" ls-remote --heads origin 'ionos-dev-v*' | sed 's#.*refs/heads/##' | grep -E '^ionos-dev-v[0-9]+$' || true)
+            if grep -qx "$want" <<<"$branches"; then pick=$want
+            else pick=$(sort -V <<<"$branches" | tail -1); fi
+            if [[ -z "$pick" ]]; then
+              pick=$(git -C "$dir" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#origin/##' || echo main)
+            fi
+            echo "$pick"
+          }
+          EOS
+
+      # --- mirror-bump path: PR in each fork's own repo ---
+
+      - name: Open PR for each mirror bump
+        if: steps.bump.outputs.mirror_count != '0' && env.DRY_RUN != '1'
+        env:
+          GH_TOKEN: ${{ secrets.UPGRADE_BOT_PAT }}
+        run: |
+          source /tmp/fork-summary.sh
+          source /tmp/fork-base.sh
+          NC_TARGET=${{ steps.resolve.outputs.nc_target }}
+          for entry in $MIRROR_READY; do
+            app=${entry%%:*}; rest=${entry#*:}; working_branch=${rest%%:*}; sha=${rest#*:}
+            clone_dir="/tmp/fork-scratch/$app"
+            fork_repo=$(git -C "$clone_dir" remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')
+            {
+              echo "## Summary"
+              echo
+              echo "This fork has zero IONOS-only commits, so it is a pure mirror of upstream."
+              echo "Fast-forwards the tracked branch to the newest NC${{ steps.resolve.outputs.nc_target }}-compatible"
+              echo "upstream tag (\`$sha\`). Opened automatically by \`scheduled-fork-apps-bump.yml\`."
+              echo
+              echo "## Review checklist"
+              echo
+              echo "See [review-bot-pr.md](https://github.com/IONOS-Productivity/nc-docs-and-tools/blob/master/docs/how-to/review-bot-pr.md#3-fork-apps-scheduled-fork-apps-bumpyml) —"
+              echo "confirm the fork is still zero-delta (it may have picked up a real IONOS commit"
+              echo "since this scan ran)."
+              echo
+              echo "## Checklist"
+              echo
+              echo "- [ ] once merged: move the \`<server-repo>\` gitlink to the new commit (not yet"
+              echo "  automated — see upgrade-fork-app.md §10)"
+            } > "/tmp/pr-body-$app.md"
+            gh pr create \
+              --repo "$fork_repo" \
+              --base "$(fork_base_branch "$clone_dir")" \
+              --head "$working_branch" \
+              --title "IONOS($app): fast-forward to NC${{ steps.resolve.outputs.nc_target }}-compatible upstream tag (scheduled)" \
+              --body-file "/tmp/pr-body-$app.md"
+          done
+
+      # --- rebase path: PR 1 in each fork's own repo ---
+
+      - name: Open PR 1 for each clean rebase
+        if: steps.bump.outputs.rebase_count != '0' && env.DRY_RUN != '1'
+        env:
+          GH_TOKEN: ${{ secrets.UPGRADE_BOT_PAT }}
+        run: |
+          source /tmp/fork-summary.sh
+          source /tmp/fork-base.sh
+          NC_TARGET=${{ steps.resolve.outputs.nc_target }}
+          for entry in $REBASE_READY; do
+            app=${entry%%:*}; rest=${entry#*:}; tag=${rest%%:*}; sha=${rest#*:}
+            clone_dir="/tmp/fork-scratch/$app"
+            fork_repo=$(git -C "$clone_dir" remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')
+            working_branch=$(git -C "$clone_dir" branch --show-current)
+            {
+              echo "## Summary"
+              echo
+              echo "Rebases this fork's IONOS delta onto the new upstream tag \`${tag%-*}\`,"
+              echo "cherry-picked clean (\`git cherry-pick -x\`, zero conflicts — see commit list"
+              echo "below for provenance). Opened automatically by \`scheduled-fork-apps-bump.yml\`."
+              echo
+              echo "Tagged \`$tag\` at \`$sha\` for the follow-up server-repo gitlink PR once this merges."
+              echo
+              echo "## Review checklist"
+              echo
+              echo "See [review-bot-pr.md](https://github.com/IONOS-Productivity/nc-docs-and-tools/blob/master/docs/how-to/review-bot-pr.md#3-fork-apps-scheduled-fork-apps-bumpyml) —"
+              echo "re-check each cherry-picked commit against the ticket that introduced it, not"
+              echo "just that it applied cleanly."
+              echo
+              echo "## Checklist"
+              echo
+              echo "- [ ] once merged: move the \`<server-repo>\` gitlink to \`$tag\` (not yet"
+              echo "  automated — see upgrade-fork-app.md §10)"
+            } > "/tmp/pr-body-$app.md"
+            gh pr create \
+              --repo "$fork_repo" \
+              --base "$(fork_base_branch "$clone_dir")" \
+              --head "$working_branch" \
+              --title "IONOS($app): rebase IONOS changes onto upstream ${tag%-*} (scheduled)" \
+              --body-file "/tmp/pr-body-$app.md"
+          done
+
+      - name: Summarize conflicts and skipped rows left for a human
+        if: always()
+        run: |
+          source /tmp/fork-summary.sh 2>/dev/null || true
+          echo "### Needs human attention (fork-apps sweep)" >> "$GITHUB_STEP_SUMMARY"
+          echo "${MIRROR_BRANCH_CUT:+Fresh branch cut at the upstream tag (history did not fast-forward; review and adopt by hand): $MIRROR_BRANCH_CUT}" >> "$GITHUB_STEP_SUMMARY"
+          echo "${REBASE_CONFLICT:-(none)}" >> "$GITHUB_STEP_SUMMARY"
+          echo "${SKIPPED_MAJOR:-(none)}" >> "$GITHUB_STEP_SUMMARY"
+          echo "${SKIPPED_OTHER:-(none)}" >> "$GITHUB_STEP_SUMMARY"
