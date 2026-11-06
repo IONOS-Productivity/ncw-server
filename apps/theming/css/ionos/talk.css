@@ -1,0 +1,49 @@
+/*
+ * SPDX-FileCopyrightText: 2026 STRATO GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
+ * Talk, dark mode. The only app-specific rules left in the theme, because it is an upstream contrast bug
+ * (1.1:1) with no token to fix it: Talk draws own messages on --color-primary-light, which stays light in dark
+ * mode, but colors their text with --color-text-light / --color-main-text, which turn light. Keep the light
+ * bubble and use dark text on it. Light mode values are unchanged.
+ * Remove when Talk fixes this; a11y/specs/pages.spec.ts (Talk conversation) tells.
+ *
+ * The App Settings dialog is teleported to <body>, outside .app-talk, so it is listed as well.
+ */
+:is(div.app-talk.content, .app-settings) li.message.outgoing .message-body {
+	--ion-bubble-text: light-dark(var(--ion-color-cool-grey-c7), var(--color-primary-light-text));
+	--color-main-text: var(--ion-bubble-text);
+	--color-text-light: var(--ion-bubble-text);
+	--color-text-maxcontrast: var(--ion-bubble-text);
+	color: var(--ion-bubble-text);
+
+	/*
+	 * Mention chips and quotes: dark text on the light bubble, but normal text on the chip's own dark background
+	 * and on the quote, which Talk paints with --color-primary-element-light-hover (dark in dark mode)
+	 */
+	:is(.nc-chip, .quote) {
+		--ion-chip-text-normal: light-dark(var(--ion-color-cool-grey-c7), var(--ion-color-cool-grey-c1));
+		--color-main-text: var(--ion-chip-text-normal);
+		--color-text-light: var(--ion-chip-text-normal);
+		--color-text-maxcontrast: var(--ion-chip-text-normal);
+		color: var(--ion-chip-text-normal);
+	}
+}
+
+/*
+ * "New conversation" dialog (a modal outside .app-talk) and the breakout rooms editor: selected participants are
+ * drawn on --color-primary-light, which stays light in dark mode, while their name, subname and check icon turn
+ * light (1.1:1). Keep the light bar and use dark text on it in dark mode.
+ */
+.selectable-participant:has(input:checked) {
+	--ion-selected-text: light-dark(var(--ion-color-cool-grey-c7), var(--color-primary-light-text));
+	--color-text-maxcontrast: var(--ion-selected-text);
+	color: var(--ion-selected-text);
+
+	/* the federated-user badge sits on a circle in --color-main-background and keeps the normal text color */
+	.avatar-wrapper__user-status {
+		color: var(--color-main-text);
+	}
+}

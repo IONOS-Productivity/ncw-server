@@ -94,9 +94,9 @@ conversation only once per login session ("Duplicate session").
 
 Background of the dark-mode bug it found: Talk draws own messages on `--color-primary-light`, which stays light in dark
 mode, but colours their text with `--color-text-light` (and links with `--color-main-text`), which turn light (1.1:1).
-**Known regression:** `apps/theming/css/ionos/talk.css`, which fixed this, was removed together with the other
-selector overrides. Until Talk or the theme fixes it again the Talk test is expected to fail in dark mode, and the
-selected participants in the "new conversation" dialog (same fix) are not covered by
+`apps/theming/css/ionos/talk.css` keeps the light bubble and uses dark text on it in dark mode; chips keep their own colours.
+It is the only app-specific stylesheet left after the token rework and covers the selected participants in the
+"new conversation" dialog as well; that dialog is **not** part of
 the automated tests, check it by hand in dark mode.
 
 ### Watch the browser
