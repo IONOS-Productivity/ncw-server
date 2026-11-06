@@ -116,3 +116,12 @@ body .app-navigation-toggle.app-navigation-toggle {
 		font-weight: 600;
 	}
 }
+
+/*
+ * The navigation body (Contacts, Notes, ...) is a flex item that can shrink to a few pixels while its content
+ * still has a margin, so with overflow-y: scroll it shows a scrollbar thumb as a short dark dash at the edge of
+ * the sidebar. This rule was in the old notes.css but applied to every app.
+ */
+#app-navigation-vue .app-navigation__body {
+	overflow-y: unset !important;
+}
