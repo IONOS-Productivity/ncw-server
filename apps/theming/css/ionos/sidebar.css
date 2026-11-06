@@ -39,13 +39,19 @@ body #app-navigation:not(.vue) {
 	}
 }
 
-/* Round grey toggle button */
+/*
+ * The navigation toggle ("close navigation") has no background in any state. !important because the
+ * component paints it with --color-main-background and a hover color. Applies to every app that uses
+ * NcAppNavigation, which all render the same class.
+ */
 body .app-navigation-toggle.app-navigation-toggle {
-	background-color: var(--ion-color-cool-grey-c2) !important;
-	color: var(--ion-color-secondary);
+	background-color: transparent !important;
+	color: var(--ion-button-sidebar-text);
 
-	&:hover {
-		background-color: var(--ion-color-cool-grey-c3) !important;
+	&:hover,
+	&:active,
+	&:focus-visible {
+		background-color: transparent !important;
 	}
 
 	:is(.material-design-icon__svg, svg) {
