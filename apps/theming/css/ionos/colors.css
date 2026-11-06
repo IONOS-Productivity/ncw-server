@@ -149,3 +149,16 @@ body .button-vue.button-vue--error {
 	border: 1px solid var(--color-error-text) !important;
 	border-bottom-width: 2px !important;
 }
+
+/* Dashboard: panels are cards on the secondary surface, the headings use the header text color */
+#content.app-dashboard {
+	background-color: var(--color-main-background);
+
+	h2 {
+		color: var(--color-background-plain-text) !important;
+	}
+
+	.panel {
+		background-color: var(--ion-surface-secondary);
+	}
+}

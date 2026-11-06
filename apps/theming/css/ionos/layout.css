@@ -10,7 +10,12 @@
 
 /* Header: IONOS logo + product info on a plain bar with a soft shadow */
 :is(#body-settings, #body-user, #body-login, #body-public) #header {
-	background-color: var(--color-background-plain);
+	/*
+	 * The dashboard makes the header transparent with !important (it shows the dashboard background image),
+	 * so this needs !important as well. Use --color-main-background: --color-background-plain is the dashboard
+	 * background color there.
+	 */
+	background-color: var(--color-main-background) !important;
 	box-shadow: var(--ion-shadow-header);
 
 	#nextcloud {
