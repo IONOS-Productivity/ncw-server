@@ -87,6 +87,25 @@ div[data-cy-files-list] .files-list__row {
 }
 
 /* Column headers in the files list and file picker are semibold */
-table th .button-vue--vue-tertiary .button-vue__text {
+table th .button-vue--vue-tertiary :is(.button-vue__text, .files-list__column-sort-button-text) {
 	font-weight: 600;
+}
+
+/* Row actions with a label ("Shared"): no fill, an outline on hover, label in the secondary text color */
+div[data-cy-files-list] .files-list__row-actions .button-vue.button-vue--icon-and-text {
+	background-color: transparent;
+	border: 2px solid transparent;
+
+	&:hover {
+		border-color: var(--ion-button-secondary-text);
+	}
+
+	.button-vue__text {
+		color: var(--ion-button-secondary-text);
+	}
+}
+
+/* The app menu icons are white SVGs made for a dark header; invert them on the light one (no-op in dark mode) */
+#header .app-menu-entry__icon .app-menu-icon__icon {
+	filter: var(--background-invert-if-bright);
 }

@@ -9,19 +9,64 @@
  */
 
 /*
- * Buttons are pills. NcButton derives its radius and its horizontal padding
- * (baseline + radius) from --border-radius-element, so keep the padding at 4 baselines
- * instead of letting it grow with the radius.
- * The doubled class beats NcButton's own scoped rule.
+ * Buttons are pills. Set border-radius directly: NcButton derives its padding from --button-radius
+ * (--border-radius-element), so scoping that token to 30px would also widen the icon-only buttons.
  */
 body .button-vue.button-vue {
-	--border-radius-element: var(--ion-radius-button);
-	--button-padding-default: calc(var(--default-grid-baseline) * 4);
+	border-radius: var(--ion-radius-button);
 }
 
-/* Navigation entries are pills as well */
-.app-navigation {
-	--border-radius-element: var(--border-radius-pill);
+/*
+ * Buttons with a label are 36px high (48px on small screens) with 16px side padding and a semibold 14px label.
+ * Primary and tertiary ones have no border; the secondary variant draws its own (colors.css).
+ * The icon-and-text buttons of the legacy @nextcloud/vue otherwise inherit the 44px clickable area, a 1px border
+ * and a 4px end padding.
+ */
+body .button-vue.button-vue--icon-and-text {
+	min-height: 36px;
+	min-width: 98px;
+	padding-block: 0;
+	padding-inline: 16px;
+
+	@media only screen and (max-width: 1023px) {
+		min-height: 48px;
+	}
+
+	.button-vue__wrapper {
+		height: 36px;
+		gap: 8px;
+	}
+
+	/* the icon box defaults to 40px, which would make the button 40px high */
+	.button-vue__icon,
+	.button-vue__icon span[role=img] {
+		min-height: 16px;
+		min-width: auto;
+		width: auto;
+	}
+
+	/* the Files app sets its own label weight on row actions with the same specificity: win by order of elements */
+	html & .button-vue__text.button-vue__text {
+		font-size: 14px;
+		font-weight: 600;
+	}
+
+	&:is(.button-vue--vue-primary, .button-vue--vue-tertiary) {
+		border: none;
+	}
+}
+
+/* Sort buttons in table headers are narrower than other labelled buttons */
+body table th .button-vue.button-vue--icon-and-text {
+	padding-inline: 12px;
+}
+
+/*
+ * Navigation entries are pills as well. Again border-radius directly: scoping --border-radius-element to
+ * .app-navigation would also give the sidebar toggle and other icon-only buttons inside it a pill padding.
+ */
+#app-navigation-vue .app-navigation-entry {
+	border-radius: var(--border-radius-pill);
 }
 
 /* Action menus (context menus) use the container radius instead of the element radius */

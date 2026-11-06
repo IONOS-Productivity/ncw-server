@@ -59,7 +59,37 @@
 	}
 }
 
-/* App navigation: wider horizontal gutter than the default 2 * baseline */
-.app-navigation__content > ul {
-	padding-inline: calc(var(--default-grid-baseline) * 5);
+/*
+ * App navigation: 20px side gutter instead of 2 baselines. The id is needed to beat the
+ * scoped padding of the navigation list.
+ */
+#app-navigation-vue {
+	.app-navigation-search {
+		padding: calc(2 * var(--default-grid-baseline)) 20px 0;
+	}
+
+	.app-navigation-list {
+		padding: calc(2 * var(--default-grid-baseline)) 20px 4px;
+	}
+
+	.app-navigation-entry__settings {
+		padding: calc(2 * var(--default-grid-baseline)) 20px 20px;
+	}
+}
+
+/*
+ * Files list: the bold IONOS header font needs more room than core's default column widths for longer labels
+ * ("Size", "Modified", ...). "ch" scales with the font in use, so it keeps working if font-size/weight changes.
+ */
+:is(#body-user, #body-public) {
+	--ionos-header-width-buffer: 4ch;
+
+	.files-list__row-size {
+		width: calc(var(--row-height) * 2 + var(--ionos-header-width-buffer));
+	}
+
+	.files-list__row-mtime,
+	.files-list__row-column-custom {
+		width: calc(var(--row-height) * 2.5 + var(--ionos-header-width-buffer));
+	}
 }

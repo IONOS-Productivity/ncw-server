@@ -33,11 +33,6 @@ body #app-navigation:not(.vue) {
 	.icon-vue {
 		color: var(--ion-button-sidebar-text);
 
-		svg {
-			width: auto;
-			height: 16px;
-		}
-
 		path {
 			fill: var(--ion-button-sidebar-text);
 		}
@@ -51,5 +46,10 @@ body .app-navigation-toggle.app-navigation-toggle {
 
 	&:hover {
 		background-color: var(--ion-color-cool-grey-c3) !important;
+	}
+
+	:is(.material-design-icon__svg, svg) {
+		width: 16px;
+		height: 16px;
 	}
 }
