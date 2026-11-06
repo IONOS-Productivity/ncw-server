@@ -115,6 +115,8 @@ div[data-cy-files-list] .files-list__row-actions .button-vue.button-vue--icon-an
  * ("View only", "Can edit") of a share link, look like primary buttons. Tokens are the same as for primary buttons.
  */
 body .button-vue--icon-and-text.action-item__menutoggle.button-vue--vue-tertiary-no-background {
+	/* NcActions paints an open toggle with --open-background-color via a more specific rule; keep the fill */
+	--open-background-color: var(--color-primary-element);
 	background-color: var(--color-primary-element);
 	border: none;
 	color: var(--color-primary-element-text);
