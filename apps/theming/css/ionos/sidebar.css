@@ -86,3 +86,27 @@ body .app-navigation-toggle.app-navigation-toggle {
 		}
 	}
 }
+
+/*
+ * The settings pages still use the legacy PHP navigation (#app-navigation > ul > li > a > img + span, no
+ * .app-navigation-entry), so the rules above do not reach it. Same look: pill entries, semibold labels, grey
+ * hover and active. The legacy styles paint the active link with --color-primary-element, hence !important.
+ */
+#app-navigation:not(.vue) ul li {
+	border-radius: var(--border-radius-pill);
+
+	&:hover {
+		background-color: var(--ion-button-sidebar-background-hover);
+	}
+
+	&.active {
+		background-color: var(--ion-button-sidebar-background-active);
+	}
+
+	a {
+		border-radius: inherit;
+		background-color: transparent !important;
+		color: var(--ion-button-sidebar-text) !important;
+		font-weight: 600;
+	}
+}
