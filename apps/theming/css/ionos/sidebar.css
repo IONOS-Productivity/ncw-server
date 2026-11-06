@@ -53,3 +53,28 @@ body .app-navigation-toggle.app-navigation-toggle {
 		height: 16px;
 	}
 }
+
+/*
+ * An opened entry with sub entries (e.g. "Shares") is a rounded card on the main background; its sub entries
+ * are 8px. Radii come from --ion-radius-submenu / --ion-radius-submenu-item (IonosTheme.php).
+ */
+#app-navigation-vue .app-navigation-entry--opened:has(.app-navigation-entry__children) {
+	background-color: var(--color-main-background);
+	border-radius: var(--ion-radius-submenu);
+
+	.app-navigation-entry__children {
+		gap: 0;
+		padding-inline: 8px;
+
+		.app-navigation-entry-wrapper {
+			min-height: 40px;
+			margin-block: 4px;
+			background-color: var(--color-main-background);
+			border-radius: var(--ion-radius-submenu-item);
+		}
+
+		.app-navigation-entry {
+			border-radius: var(--ion-radius-submenu-item);
+		}
+	}
+}

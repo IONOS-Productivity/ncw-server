@@ -249,6 +249,9 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--border-radius-container' => '16px',
 			// buttons are pills, see css/ionos/shape.css
 			'--ion-radius-button' => '30px',
+			// opened navigation entry with sub entries (HDNEXT-1065): the card, and the entries inside it
+			'--ion-radius-submenu' => '20px',
+			'--ion-radius-submenu-item' => '8px',
 			'--ion-shadow-header' => '0 4px 8px rgba(0, 0, 0, 0.12)',
 			'--color-main-background' => $ionColorMainBackground,
 			'--color-main-background-translucent' => 'color-mix(in srgb, var(--color-main-background) 97%, transparent)',
