@@ -198,6 +198,13 @@ class IonosTheme extends DefaultTheme implements ITheme {
 			'--ion-surface-secondary' => 'light-dark(var(--ion-color-cool-grey-c1), var(--ion-color-cool-grey-c8))',
 			'--ion-button-secondary-text' => 'light-dark(var(--ion-color-blue-b7), var(--ion-color-cool-grey-c1))',
 			'--ion-button-secondary-text-hover' => 'light-dark(#ffffff, var(--ion-color-blue-b7))',
+			'--ion-button-sidebar-text' => 'light-dark(var(--ion-color-secondary), var(--ion-color-cool-grey-c1))',
+			'--ion-button-sidebar-background-hover' => 'light-dark(var(--ion-color-cool-grey-c2), var(--ion-color-cool-grey-c7))',
+			'--ion-button-sidebar-background-active' => 'light-dark(var(--ion-color-cool-grey-c3), var(--ion-color-cool-grey-c6))',
+			'--ion-button-tertiary-text' => 'light-dark(var(--ion-color-secondary), var(--ion-color-cool-grey-c1))',
+			'--ion-button-tertiary-background-default' => 'light-dark(var(--ion-color-blue-b1), var(--ion-color-blue-b7))',
+			'--ion-button-tertiary-background-hover' => 'light-dark(var(--ion-color-cool-grey-c2), var(--ion-color-cool-grey-c7))',
+			'--ion-button-tertiary-background-active' => 'light-dark(var(--ion-color-cool-grey-c3), var(--ion-color-cool-grey-c6))',
 		];
 
 

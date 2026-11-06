@@ -1,0 +1,55 @@
+/*
+ * SPDX-FileCopyrightText: 2026 STRATO GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
+ * App navigation. The entries are rendered as "legacy" (.app-navigation-entry--legacy), which colors the
+ * active entry with --color-primary-element via !important, so these rules need the id and !important.
+ */
+
+/* The doubled class beats the scoped background of the legacy navigation */
+body .app-navigation.app-navigation,
+body #app-navigation:not(.vue) {
+	background-color: var(--ion-surface-secondary);
+}
+
+#app-navigation-vue .app-navigation-entry {
+	&:hover {
+		background-color: var(--ion-button-sidebar-background-hover);
+	}
+
+	&.active,
+	&.active:hover {
+		background-color: var(--ion-button-sidebar-background-active) !important;
+	}
+
+	.app-navigation-entry-link,
+	.app-navigation-entry__name {
+		color: var(--ion-button-sidebar-text) !important;
+		font-weight: 600;
+	}
+
+	.icon-vue {
+		color: var(--ion-button-sidebar-text);
+
+		svg {
+			width: auto;
+			height: 16px;
+		}
+
+		path {
+			fill: var(--ion-button-sidebar-text);
+		}
+	}
+}
+
+/* Round grey toggle button */
+body .app-navigation-toggle.app-navigation-toggle {
+	background-color: var(--ion-color-cool-grey-c2) !important;
+	color: var(--ion-color-secondary);
+
+	&:hover {
+		background-color: var(--ion-color-cool-grey-c3) !important;
+	}
+}

@@ -31,12 +31,6 @@
 	}
 }
 
-/* App navigation sits on the secondary surface */
-.app-navigation,
-#app-navigation:not(.vue) {
-	background-color: var(--ion-surface-secondary);
-}
-
 /*
  * Secondary buttons are outlined and filled on hover. Primary, tertiary and the
  * error/warning/success variants come from the --color-* tokens.
@@ -51,4 +45,48 @@ body .button-vue:is(.button-vue--secondary, .button-vue--vue-secondary) {
 		background-color: var(--ion-button-secondary-text);
 		color: var(--ion-button-secondary-text-hover);
 	}
+}
+
+/*
+ * Tertiary buttons with a label (filter chips, view switcher, ...) are tinted. The class names are the ones
+ * @nextcloud/vue renders today (--vue-tertiary, --icon-and-text). Not tinted: icon-only buttons, the sharing
+ * status in file rows, sort buttons in table headers, breadcrumb links, "Cancel" and the filter popover.
+ */
+body .button-vue--icon-and-text.button-vue--vue-tertiary:not(.files-list__row-action-sharing-status):not(table th button):not(li.vue-crumb a):not([aria-label="Cancel"]):not([class*="_fileListFilters__popover"] *) {
+	background-color: var(--ion-button-tertiary-background-default);
+	color: var(--ion-button-tertiary-text);
+
+	&:hover:not(:disabled) {
+		background-color: var(--ion-button-tertiary-background-hover);
+	}
+
+	&:active:not(:disabled) {
+		background-color: var(--ion-button-tertiary-background-active);
+	}
+}
+
+/* Files list: folder/file icons and row actions are blue, the hovered action is filled */
+div[data-cy-files-list] .files-list__row {
+	.files-list__row-icon,
+	.files-list__row-actions :is(.action-items, .icon-vue, .material-design-icon, svg, svg path) {
+		color: var(--ion-color-blue-b4);
+	}
+
+	/* the sharing status icon has no fill of its own and would render black */
+	.files-list__row-action-sharing-status :is(svg, svg path) {
+		fill: currentColor;
+	}
+
+	.files-list__row-actions .button-vue--icon-only:hover:not(:disabled) {
+		background-color: var(--ion-color-blue-b4);
+
+		:is(.icon-vue, .material-design-icon, svg, svg path) {
+			color: #ffffff;
+		}
+	}
+}
+
+/* Column headers in the files list and file picker are semibold */
+table th .button-vue--vue-tertiary .button-vue__text {
+	font-weight: 600;
 }

@@ -68,6 +68,14 @@ const pairs: Pair[] = [
 	{ group: 'ionos', fg: '--ion-button-secondary-text', bg: '--color-main-background' },
 	{ group: 'ionos', fg: '--ion-button-secondary-text-hover', bg: '--ion-button-secondary-text' },
 
+	// --- Sidebar entries and tinted tertiary buttons
+	{ group: 'ionos', fg: '--ion-button-sidebar-text', bg: '--ion-surface-secondary' },
+	{ group: 'ionos', fg: '--ion-button-sidebar-text', bg: '--ion-button-sidebar-background-hover' },
+	{ group: 'ionos', fg: '--ion-button-sidebar-text', bg: '--ion-button-sidebar-background-active' },
+	{ group: 'ionos', fg: '--ion-button-tertiary-text', bg: '--ion-button-tertiary-background-default' },
+	{ group: 'ionos', fg: '--ion-button-tertiary-text', bg: '--ion-button-tertiary-background-hover' },
+	{ group: 'ionos', fg: '--ion-button-tertiary-text', bg: '--ion-button-tertiary-background-active' },
+
 	// --- Header bar and modal backdrop text
 	{ group: 'ionos', fg: '--color-background-plain-text', bg: '--color-background-plain' },
 ]
