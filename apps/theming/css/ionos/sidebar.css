@@ -62,6 +62,14 @@ body .app-navigation-toggle.app-navigation-toggle {
 	background-color: var(--color-main-background);
 	border-radius: var(--ion-radius-submenu);
 
+	/*
+	 * The entry that opens the card must have the card's radius. As a 100px pill (22px on a 44px entry) its
+	 * corners are rounder than the card's 20px and the card background shows as a sliver behind them.
+	 */
+	> .app-navigation-entry {
+		border-radius: var(--ion-radius-submenu);
+	}
+
 	.app-navigation-entry__children {
 		gap: 0;
 		padding-inline: 8px;
