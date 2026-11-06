@@ -109,3 +109,41 @@ div[data-cy-files-list] .files-list__row-actions .button-vue.button-vue--icon-an
 #header .app-menu-entry__icon .app-menu-icon__icon {
 	filter: var(--background-invert-if-bright);
 }
+
+/*
+ * Menu toggles with a label that carry no background of their own, e.g. the permission selector
+ * ("View only", "Can edit") of a share link, look like primary buttons. Tokens are the same as for primary buttons.
+ */
+body .button-vue--icon-and-text.action-item__menutoggle.button-vue--vue-tertiary-no-background {
+	background-color: var(--color-primary-element);
+	border: none;
+	color: var(--color-primary-element-text);
+
+	/*
+	 * files_sharing colors this toggle with --color-primary-element !important (it expects no background),
+	 * which would be invisible on our fill, so color the label and the arrow themselves
+	 */
+	.button-vue__text,
+	.button-vue__icon svg {
+		color: var(--color-primary-element-text);
+	}
+
+	&:hover:not(:disabled) {
+		background-color: var(--color-primary-element-hover);
+	}
+}
+
+/*
+ * Warning and error buttons have a border in their text color, thicker at the bottom. !important because
+ * the shape rules for labelled buttons (border: none) are as specific and apps still render their buttons
+ * with the legacy classes in addition to the variant class.
+ */
+body .button-vue.button-vue--warning {
+	border: 1px solid var(--color-warning-text) !important;
+	border-bottom-width: 2px !important;
+}
+
+body .button-vue.button-vue--error {
+	border: 1px solid var(--color-error-text) !important;
+	border-bottom-width: 2px !important;
+}
