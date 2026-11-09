@@ -87,6 +87,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   ARTIFACTORY_REPOSITORY_SNAPSHOT: ionos-productivity-ncwserver-snapshot
+  ARTIFACTORY_REPOSITORY_SHARED_APPS: ionos-productivity-nc-shared-apps
   # Cache version - increment this to invalidate all caches when build process changes
   # Update when: Node.js version changes, PHP version changes, build scripts modified, etc.
   # Format: v<major>.<minor> (e.g., v1.0, v1.1, v2.0)
@@ -445,6 +446,7 @@ jobs:
           JF_USER: ${{ secrets.JF_ARTIFACTORY_USER }}
           JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
           ARTIFACTORY_REPOSITORY_SNAPSHOT: ${{ env.ARTIFACTORY_REPOSITORY_SNAPSHOT }}
+          ARTIFACTORY_REPOSITORY_SHARED_APPS: ${{ env.ARTIFACTORY_REPOSITORY_SHARED_APPS }}
           GITHUB_REF: ${{ github.ref }}
           # Display-only copies of the two workflow_dispatch inputs. They differ from
           # APPS_TO_REBUILD above only in their empty-value placeholder, and both are free
@@ -647,6 +649,7 @@ jobs:
           REF: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
           JOB_HTML_URL: ${{ steps.get_job_data.outputs.job_html_url }}
+          ARTIFACTORY_REPOSITORY_SHARED_APPS: ${{ env.ARTIFACTORY_REPOSITORY_SHARED_APPS }}
         run: |
           set -e
 
@@ -656,7 +659,7 @@ jobs:
           echo "App SHA: $APP_SHA"
           echo "App Path: $APP_PATH"
           echo "Cache Version: $EFFECTIVE_CACHE_VERSION"
-          echo "Repository: ${ARTIFACTORY_REPOSITORY_SNAPSHOT}"
+          echo "Repository: ${ARTIFACTORY_REPOSITORY_SHARED_APPS}"
           echo "==============================="
 
           # Verify app path exists
@@ -687,7 +690,7 @@ jobs:
 
           # Upload to JFrog - store in snapshot repo under dev/apps/
           # Include CACHE_VERSION in path to enable complete cache invalidation
-          JFROG_PATH="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${ARCHIVE_NAME}"
+          JFROG_PATH="${ARTIFACTORY_REPOSITORY_SHARED_APPS}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${ARCHIVE_NAME}"
 
           # Build properties for artifact metadata
           JFROG_PROPS_LIST=()
@@ -799,6 +802,7 @@ jobs:
           APPS_TO_BUILD: ${{ needs.prepare-matrix.outputs.apps_to_build }}
           FULL_MATRIX: ${{ needs.prepare-matrix.outputs.external_apps_matrix }}
           EFFECTIVE_CACHE_VERSION: ${{ needs.prepare-matrix.outputs.effective_cache_version }}
+          ARTIFACTORY_REPOSITORY_SHARED_APPS: ${{ env.ARTIFACTORY_REPOSITORY_SHARED_APPS }}
         run: |
           set -euo pipefail
 
@@ -897,9 +901,9 @@ jobs:
               echo "Restoring newly built: $APP_NAME"
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-              # Construct JFrog path matching what build-external-apps uploaded
-              JFROG_PATH="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/apps/${EFFECTIVE_CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${APP_SHA}.tar.gz"
-              ARCHIVE_NAME="${APP_NAME}-${APP_SHA}.tar.gz"
+              # Read JFrog path and archive name from the JSON emitted by detect-app-cache.sh
+              JFROG_PATH=$(echo "$app_json" | jq -r '.jfrog_path')
+              ARCHIVE_NAME=$(echo "$app_json" | jq -r '.archive_name')
 
               echo "📥 Downloading from JFrog: $JFROG_PATH"
 
