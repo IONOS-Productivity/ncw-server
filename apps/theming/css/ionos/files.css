@@ -1,0 +1,48 @@
+/*
+ * SPDX-FileCopyrightText: 2026 STRATO GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
+ * Files list: the grid/list view toggle sits on the table header row, at the right end of it, not in the toolbar.
+ * It is taken out of the flow (absolute) and src/ionos.js sets --files-list-grid-button-top so that it follows the
+ * header row when the content above the table changes height (active filter chips, folder note on public shares,
+ * workspace description, empty list). The rows reserve 44px at the right for it.
+ */
+#app-content-vue button.files-list__header-grid-button {
+	position: absolute;
+	top: var(--files-list-grid-button-top, 70px);
+	right: 20px;
+	z-index: 33;
+}
+
+thead.files-list__thead tr,
+div[data-cy-files-list]:not(.files-list--grid) tbody.files-list__tbody tr.files-list__row,
+tfoot.files-list__tfoot tr {
+	padding-right: 44px;
+	padding-left: 4px;
+
+	@media only screen and (max-width: 512px) {
+		padding-right: 16px;
+	}
+}
+
+#app-content-vue div.files-list__header {
+	margin-right: 16px;
+	margin-bottom: 14px;
+
+	@media only screen and (max-width: 1023px) {
+		margin-top: 15px;
+	}
+}
+
+/* Public share: the toolbar has the same left gutter as the list */
+#body-public #app-content-vue div.files-list__header {
+	margin-left: 16px;
+}
+
+/* Pull-to-refresh icon is centered */
+.files-list__refresh-icon {
+	position: absolute;
+	right: 50%;
+}
