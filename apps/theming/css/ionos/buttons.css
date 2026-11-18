@@ -247,7 +247,7 @@
 					}
 				}
 
-				&:hover:not(:disabled):not(.button-vue--disabled):not(&.modal-container__close):not(.icon-collapse):not(.files-list__header-grid-button) {
+				&:hover:not(:disabled):not(.button-vue--disabled):not(&.modal-container__close):not(.icon-collapse) {
 					background-color: var(--ion-button--icon-only-background-hover);
 
 					.button-vue__icon span[role=img]>svg, svg {
@@ -255,7 +255,7 @@
 					}
 				}
 
-				&:active:not(:disabled):not(.button-vue--disabled):not(&.modal-container__close):not(.icon-collapse):not(.files-list__header-grid-button) {
+				&:active:not(:disabled):not(.button-vue--disabled):not(&.modal-container__close):not(.icon-collapse) {
 					background-color: var(--ion-button--icon-only-background-active);
 
 					.button-vue__icon span[role=img]>svg {
@@ -263,20 +263,6 @@
 					}
 				}
 
-				&.files-list__header-grid-button {
-					&:hover {
-						background-color: transparent;
-						.button-vue__icon span[role=img]>svg {
-							color: var(--ion-color-blue-b5);
-						}
-					}
-					&:active {
-						background-color: transparent;
-						.button-vue__icon span[role=img]>svg {
-							color: var(--ion-color-typo-mild);
-						}
-					}
-				}
 				&.modal-container__close {
 					margin: 4px;
 					.button-vue__icon span[role=img]>svg {
