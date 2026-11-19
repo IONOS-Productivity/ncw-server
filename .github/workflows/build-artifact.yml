@@ -766,12 +766,13 @@ jobs:
           submodules: false  # App submodules are restored from JFrog/cache; only IONOS is needed
           fetch-depth: 1
 
-      - name: Checkout IONOS submodule
+      - name: Checkout IONOS and 3rdparty submodules
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:"
           git submodule update --init IONOS
+          git submodule update --init 3rdparty
 
       - name: Setup JFrog CLI
         uses: jfrog/setup-jfrog-cli@1641575d87647fb969c0545f0b6a76873e328b7c # v5.0.0

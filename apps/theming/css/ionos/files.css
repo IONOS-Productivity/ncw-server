@@ -25,22 +25,9 @@ div.files-list__filters {
 	}
 }
 
-thead.files-list__thead tr,
-div[data-cy-files-list]:not(.files-list--grid) tbody.files-list__tbody tr.files-list__row,
-tfoot.files-list__tfoot tr {
-	padding-right: 44px;
-	padding-left: 4px;
-
-	@media only screen and (max-width: 512px) {
-		padding-right: 16px;
-	}
-}
-
-#app-content-vue button.files-list__header-grid-button {
-	position: absolute;
-	top: var(--files-list-grid-button-top, 70px);
-	right: 20px;
-	z-index: 33;
+body .files-list__header :is(.v-popper, .action-item) {
+	display: flex;
+	align-items: center;
 }
 
 .files-list__refresh-icon {
@@ -57,7 +44,7 @@ tfoot.files-list__tfoot tr {
 
 #body-user, #body-public {
 	/* the bold IONOS header font needs more room than core's default widths for longer
-	   labels. "ch" scales with the font in use instead of a fixed px guess, 
+	   labels. "ch" scales with the font in use instead of a fixed px guess,
 	   so it keeps working if font-size/weight changes */
 	--ionos-header-width-buffer: 4ch;
 
