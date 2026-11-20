@@ -15,7 +15,7 @@ set -o pipefail  # Exit if any command in pipeline fails
 : "${GH_TOKEN:?GH_TOKEN not set}"
 : "${CACHE_VERSION:?CACHE_VERSION not set}"
 : "${FORCE_REBUILD:?FORCE_REBUILD not set}"
-: "${ARTIFACTORY_REPOSITORY_SNAPSHOT:?ARTIFACTORY_REPOSITORY_SNAPSHOT not set}"
+: "${ARTIFACTORY_REPOSITORY_SHARED_APPS:?ARTIFACTORY_REPOSITORY_SHARED_APPS not set}"
 
 # Optional variables
 APPS_TO_REBUILD="${APPS_TO_REBUILD:-}"
@@ -51,25 +51,30 @@ echo "JF_ACCESS_TOKEN present: $([ -n "$JF_ACCESS_TOKEN" ] && echo 'YES' || echo
 
 if [ -n "$JF_URL" ] && [ -n "$JF_USER" ] && [ -n "$JF_ACCESS_TOKEN" ]; then
   echo "✓ All JFrog credentials available"
-  echo "Installing JFrog CLI..."
-  # Install JFrog CLI
-  curl -fL https://install-cli.jfrog.io | sh
-  export PATH=$PATH:$PWD
-  echo "JFrog CLI version: $(jf --version)"
-
-  # Configure JFrog
-  echo "Configuring JFrog server: $JF_URL"
-  jf config add jfrog-server --url="$JF_URL" --user="$JF_USER" --access-token="$JF_ACCESS_TOKEN" --interactive=false
-
-  # Test connection with verbose output
-  echo "Testing JFrog connection..."
-  if jf rt ping; then
-    JFROG_AVAILABLE="true"
-    echo "✓ JFrog connection successful"
-    echo "Repository: $ARTIFACTORY_REPOSITORY_SNAPSHOT"
+  if ! command -v jf >/dev/null 2>&1; then
+    echo "⚠ JFrog CLI (jf) not in PATH; skipping JFrog cache checks"
+    echo "  (jf should be installed by jfrog/setup-jfrog-cli before this script runs)"
   else
-    echo "⚠ JFrog ping failed, will fall back to GitHub cache"
-    echo "Ping output was unsuccessful"
+    echo "JFrog CLI version: $(jf --version)"
+
+    # Configure JFrog (skip if already configured — avoids "Server ID already exists" when
+    # a previous step in the same job has already run jf config add with the same server ID)
+    if jf config show jfrog-server >/dev/null 2>&1; then
+      echo "JFrog server 'jfrog-server' already configured, reusing"
+    else
+      echo "Configuring JFrog server: $JF_URL"
+      jf config add jfrog-server --url="$JF_URL" --user="$JF_USER" --access-token="$JF_ACCESS_TOKEN" --interactive=false
+    fi
+
+    # Test connection with verbose output
+    echo "Testing JFrog connection..."
+    if jf rt ping; then
+      JFROG_AVAILABLE="true"
+      echo "✓ JFrog connection successful"
+      echo "Repository: $ARTIFACTORY_REPOSITORY_SHARED_APPS"
+    else
+      echo "⚠ JFrog ping failed, will fall back to GitHub cache"
+    fi
   fi
 else
   echo "⚠ JFrog credentials not available, using GitHub cache only"
@@ -140,7 +145,12 @@ while IFS= read -r app_json; do
   if [ -z "$CURRENT_SHA" ]; then
     echo "⊘ $APP_NAME - not a registered submodule in HEAD tree, will build"
     echo "| $APP_NAME | N/A | N/A | ⊘ Not a registered submodule |" >> "$GITHUB_STEP_SUMMARY"
-    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "unknown" '. + [{name: $app, sha: $sha}]')
+    UNKNOWN_SUFFIX="unknown"
+    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c \
+      --arg app "$APP_NAME" --arg sha "$UNKNOWN_SUFFIX" \
+      --arg archive_name "${APP_NAME}-${UNKNOWN_SUFFIX}.tar.gz" \
+      --arg jfrog_path "${ARTIFACTORY_REPOSITORY_SHARED_APPS}/apps/${CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${UNKNOWN_SUFFIX}.tar.gz" \
+      '. + [{name: $app, sha: $sha, archive_name: $archive_name, jfrog_path: $jfrog_path}]')
     APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
     continue
   fi
@@ -148,10 +158,10 @@ while IFS= read -r app_json; do
   # Add SHA to the map for all apps (regardless of cache status)
   APPS_SHA_MAP=$(echo "$APPS_SHA_MAP" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '.[$app] = $sha')
 
-  # Cache key that would be used for this app
-  # Format: <version>-app-build-<app-name>-<sha>
-  CACHE_KEY="${CACHE_VERSION}-app-build-${APP_NAME}-${CURRENT_SHA}"
+  # Cache key for this app — use 8-char short SHAs throughout.
   SHORT_SHA="${CURRENT_SHA:0:8}"
+  CACHE_KEY="${CACHE_VERSION}-app-build-${APP_NAME}-${SHORT_SHA}"
+  ARCHIVE_SUFFIX="${SHORT_SHA}"
 
   echo -n "  Checking $APP_NAME (SHA: $SHORT_SHA)... "
 
@@ -159,7 +169,11 @@ while IFS= read -r app_json; do
   if [ "$FORCE_REBUILD" == "true" ]; then
     echo "🔄 force rebuild"
     echo "| $APP_NAME | \`$SHORT_SHA\` | \`$CACHE_KEY\` | 🔄 Force rebuild |" >> "$GITHUB_STEP_SUMMARY"
-    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '. + [{name: $app, sha: $sha}]')
+    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c \
+      --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" \
+      --arg archive_name "${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      --arg jfrog_path "${ARTIFACTORY_REPOSITORY_SHARED_APPS}/apps/${CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      '. + [{name: $app, sha: $sha, archive_name: $archive_name, jfrog_path: $jfrog_path}]')
     APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
     continue
   fi
@@ -176,61 +190,80 @@ while IFS= read -r app_json; do
   if [ "$REBUILD_THIS_APP" == "true" ]; then
     echo "🔨 rebuild requested"
     echo "| $APP_NAME | \`$SHORT_SHA\` | \`$CACHE_KEY\` | 🔨 Rebuild requested |" >> "$GITHUB_STEP_SUMMARY"
-    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '. + [{name: $app, sha: $sha}]')
+    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c \
+      --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" \
+      --arg archive_name "${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      --arg jfrog_path "${ARTIFACTORY_REPOSITORY_SHARED_APPS}/apps/${CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      '. + [{name: $app, sha: $sha, archive_name: $archive_name, jfrog_path: $jfrog_path}]')
     APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
     continue
   fi
 
   # Check JFrog first before GitHub cache (available for all branches)
   if [ "$JFROG_AVAILABLE" == "true" ]; then
-    JFROG_PATH="${ARTIFACTORY_REPOSITORY_SNAPSHOT}/apps/${CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${CURRENT_SHA}.tar.gz"
+    JFROG_PATH="${ARTIFACTORY_REPOSITORY_SHARED_APPS}/apps/${CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz"
+    FOUND_IN_JFROG="false"
 
     echo ""
     echo "  🔍 Checking JFrog for $APP_NAME..."
     echo "     Path: $JFROG_PATH"
-    echo "     Full SHA: $CURRENT_SHA"
+    echo "     SHA: $SHORT_SHA"
 
     # Check if artifact exists in JFrog with verbose output
     echo "     Running: jf rt s \"$JFROG_PATH\""
-    SEARCH_OUTPUT=$(jf rt s "$JFROG_PATH" 2>&1)
-    SEARCH_EXIT_CODE=$?
-
-    echo "     Search exit code: $SEARCH_EXIT_CODE"
-    if [ $SEARCH_EXIT_CODE -eq 0 ]; then
+    if SEARCH_OUTPUT=$(jf rt s "$JFROG_PATH" 2>&1); then
+      echo "     Search exit code: 0"
       echo "     Search output:"
       echo "$SEARCH_OUTPUT" | sed 's/^/       /'
 
       if echo "$SEARCH_OUTPUT" | grep -q "$JFROG_PATH"; then
         echo "     ✓ Artifact found in JFrog!"
+        ARCHIVE_NAME="${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz"
         echo "✓ in JFrog"
         echo "| $APP_NAME | \`$SHORT_SHA\` | \`$JFROG_PATH\` | 📦 In JFrog |" >> "$GITHUB_STEP_SUMMARY"
         APPS_IN_JFROG=$((APPS_IN_JFROG + 1))
         APPS_TO_RESTORE_COUNT=$((APPS_TO_RESTORE_COUNT + 1))
         # Add to restore list with JFrog source
-        APPS_TO_RESTORE=$(echo "$APPS_TO_RESTORE" | jq -c --argjson app "$app_json" --arg sha "$CURRENT_SHA" --arg jfrog_path "$JFROG_PATH" --arg source "jfrog" '. + [($app + {sha: $sha, jfrog_path: $jfrog_path, source: $source})]')
-        continue
+        APPS_TO_RESTORE=$(echo "$APPS_TO_RESTORE" | jq -c --argjson app "$app_json" --arg sha "$CURRENT_SHA" --arg jfrog_path "$JFROG_PATH" --arg archive_name "$ARCHIVE_NAME" --arg source "jfrog" '. + [($app + {sha: $sha, jfrog_path: $jfrog_path, archive_name: $archive_name, source: $source})]')
+        FOUND_IN_JFROG="true"
       else
         echo "     ✗ Artifact not found in search results"
       fi
     else
+      echo "     Search exit code: non-zero"
       echo "     ✗ Search failed with error:"
       echo "$SEARCH_OUTPUT" | sed 's/^/       /'
     fi
-    echo "     → Falling back to GitHub cache check"
+
+    if [ "$FOUND_IN_JFROG" == "true" ]; then
+      continue
+    fi
+
+    echo "⚡ needs build (JFrog miss)"
+    echo "| $APP_NAME | \`$SHORT_SHA\` | \`$JFROG_PATH\` | 🔨 Needs build (not in JFrog) |" >> "$GITHUB_STEP_SUMMARY"
+    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c \
+      --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" \
+      --arg archive_name "${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      --arg jfrog_path "${ARTIFACTORY_REPOSITORY_SHARED_APPS}/apps/${CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      '. + [{name: $app, sha: $sha, archive_name: $archive_name, jfrog_path: $jfrog_path}]')
+    APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
+    continue
   fi
 
   # Check if cache exists using GitHub CLI
   # Include --ref to access caches from the current ref (branch, PR, etc.)
-  CACHE_EXISTS="false"
   if ! CACHE_LIST=$(gh cache list --ref "$GITHUB_REF" --key "$CACHE_KEY" --json key --jq ".[].key" 2>&1); then
     echo "⚠️ Warning: Failed to query cache for $APP_NAME: $CACHE_LIST"
     echo "| $APP_NAME | \`$SHORT_SHA\` | \`$CACHE_KEY\` | ⚠️ Cache check failed - will build |" >> "$GITHUB_STEP_SUMMARY"
-    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '. + [{name: $app, sha: $sha}]')
+    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c \
+      --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" \
+      --arg archive_name "${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      --arg jfrog_path "${ARTIFACTORY_REPOSITORY_SHARED_APPS}/apps/${CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      '. + [{name: $app, sha: $sha, archive_name: $archive_name, jfrog_path: $jfrog_path}]')
     APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
     continue
   fi
   if echo "$CACHE_LIST" | grep -q "^${CACHE_KEY}$"; then
-    CACHE_EXISTS="true"
     APPS_CACHED=$((APPS_CACHED + 1))
     APPS_TO_RESTORE_COUNT=$((APPS_TO_RESTORE_COUNT + 1))
     echo "✓ cached"
@@ -240,7 +273,11 @@ while IFS= read -r app_json; do
   else
     echo "⚡ needs build"
     echo "| $APP_NAME | \`$SHORT_SHA\` | \`$CACHE_KEY\` | 🔨 Needs build |" >> "$GITHUB_STEP_SUMMARY"
-    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" '. + [{name: $app, sha: $sha}]')
+    APPS_TO_BUILD=$(echo "$APPS_TO_BUILD" | jq -c \
+      --arg app "$APP_NAME" --arg sha "$CURRENT_SHA" \
+      --arg archive_name "${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      --arg jfrog_path "${ARTIFACTORY_REPOSITORY_SHARED_APPS}/apps/${CACHE_VERSION}/${APP_NAME}/${APP_NAME}-${ARCHIVE_SUFFIX}.tar.gz" \
+      '. + [{name: $app, sha: $sha, archive_name: $archive_name, jfrog_path: $jfrog_path}]')
     APPS_TO_BUILD_COUNT=$((APPS_TO_BUILD_COUNT + 1))
   fi
 
